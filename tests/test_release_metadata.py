@@ -43,7 +43,7 @@ class ReleaseMetadataTests(unittest.TestCase):
         )
         self.assertEqual(manifest["schema"], 1)
         self.assertEqual(manifest["channel"], "stable")
-        self.assertGreaterEqual(manifest["release_sequence"], 2)
+        self.assertGreaterEqual(manifest["release_sequence"], 3)
         self.assertEqual(
             [item["id"] for item in manifest["packages"]],
             ["spp-client-core", "spp-victory-audio"],
@@ -69,6 +69,25 @@ class ReleaseMetadataTests(unittest.TestCase):
                     self.assertEqual(
                         hashlib.sha256(data).hexdigest(), record["sha256"]
                     )
+                    source = ROOT / "packages" / package["id"] / member.filename
+                    self.assertEqual(data, source.read_bytes())
+
+    def test_core_release_version_matches_runtime_and_builder(self):
+        manifest = json.loads((ROOT / "manifest.json").read_text(encoding="utf-8"))
+        core = next(p for p in manifest["packages"] if p["id"] == "spp-client-core")
+        self.assertEqual(core["version"], "0.1.1-beta")
+        for source in (
+            ROOT / "packages/spp-client-core/spp_client_core.py",
+            ROOT / "tools/build_local_release.py",
+        ):
+            tree = ast.parse(source.read_text(encoding="utf-8"))
+            versions = [
+                ast.literal_eval(node.value)
+                for node in tree.body if isinstance(node, ast.Assign)
+                and any(isinstance(t, ast.Name) and t.id == "CORE_VERSION"
+                        for t in node.targets)
+            ]
+            self.assertEqual(versions, [core["version"]])
 
 
 if __name__ == "__main__":

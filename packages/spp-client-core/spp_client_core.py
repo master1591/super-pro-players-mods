@@ -13,10 +13,10 @@ import time
 import uuid
 
 from .playback import PlaybackError, create_player
-from .protocol import build_hello, parse_chat_message
+from .protocol import build_hello, parse_chat_message, parse_control_message
 
 
-CORE_VERSION = "0.1.0-beta"
+CORE_VERSION = "0.1.1-beta"
 AUDIO_PACKAGE_ID = "spp-victory-audio"
 CATALOG_FILENAME = "catalog.json"
 POLL_SECONDS = 0.20
@@ -24,6 +24,9 @@ MAX_CATALOG_BYTES = 65536
 MAX_SEEN_EVENTS = 256
 MIN_EVENT_GAP_SECONDS = 1.0
 HELLO_REFRESH_SECONDS = 45.0
+HELLO_RETRY_SECONDS = 6.0
+HELLO_FAST_ATTEMPTS = 3
+HELLO_TIMEOUT_SECONDS = 18.0
 PUBLIC_PARTY_NAME = "🥊super pro players🥊"
 
 _runtime = None
@@ -87,6 +90,8 @@ def _connection_details(scene):
             info = getter()
         except Exception:
             continue
+        if info is None or info == {}:
+            return "disconnected", ""
         if isinstance(info, dict):
             name_value = str(info.get("name", ""))
             key = repr(sorted((str(key), repr(value)) for key, value in info.items()))
@@ -96,6 +101,8 @@ def _connection_details(scene):
             getattr(info, attr, None)
             for attr in ("name", "address", "port", "build_number")
         )
+        if not any(value is not None for value in stable):
+            return "disconnected", ""
         return repr(stable), name_value
     return "disconnected", ""
 
@@ -185,6 +192,12 @@ class ClientRuntime(object):
         self._last_volume = None
         self._last_event_time = -1000.0
         self._last_hello_time = -1000.0
+        self._first_hello_time = None
+        self._hello_attempts = 0
+        self._discovered_nonce = None
+        self._server_nonce = None
+        self._connected_notice = False
+        self._hello_timeout_warned = False
         self._seen_events = set()
         self._seen_order = deque()
         self._connection, self._connection_name = _connection_details(scene)
@@ -193,6 +206,7 @@ class ClientRuntime(object):
         self._warned = set()
         self._active = True
         self._music_restore = None
+        self._music_guard = None
 
     def start(self):
         try:
@@ -236,17 +250,44 @@ class ClientRuntime(object):
             return True, 0.8
 
     def _is_spp_connection(self):
-        return self._connection_name.casefold() == PUBLIC_PARTY_NAME.casefold()
+        return (
+            self._connection != "disconnected"
+            and self._server_nonce is not None
+        )
+
+    def _can_send_hello(self):
+        return self._connection != "disconnected" and (
+            self._discovered_nonce is not None
+            or self._connection_name.casefold() == PUBLIC_PARTY_NAME.casefold()
+        )
 
     def _send_hello(self, force=False):
         if (
-            not self._is_spp_connection()
+            not self._can_send_hello()
             or self._player is None
             or self._catalog is None
         ):
             return
         now = time.monotonic()
-        if not force and now - self._last_hello_time < HELLO_REFRESH_SECONDS:
+        interval = (
+            HELLO_RETRY_SECONDS
+            if self._server_nonce is None
+            and self._hello_attempts < HELLO_FAST_ATTEMPTS
+            else HELLO_REFRESH_SECONDS
+        )
+        if (
+            self._server_nonce is None
+            and self._first_hello_time is not None
+            and now - self._first_hello_time >= HELLO_TIMEOUT_SECONDS
+            and not self._hello_timeout_warned
+        ):
+            self._hello_timeout_warned = True
+            _screenmessage(
+                self._base,
+                "SPP music: waiting for server confirmation; retrying.",
+                color=(1.0, 0.7, 0.2),
+            )
+        if not force and now - self._last_hello_time < interval:
             return
         sender = getattr(self._scene, "chatmessage", None)
         if sender is None:
@@ -254,8 +295,43 @@ class ClientRuntime(object):
         try:
             sender(build_hello(self._client_nonce))
             self._last_hello_time = now
+            self._hello_attempts += 1
+            if self._first_hello_time is None:
+                self._first_hello_time = now
+            print("[SPP Client] music hello sent (attempt %d)" % self._hello_attempts)
         except Exception:
-            pass
+            self._warn_once("hello-send", "music registration could not be sent.")
+
+    def _handle_control(self, frame):
+        if self._connection == "disconnected":
+            return
+        if frame["kind"] == "discover":
+            nonce = frame["session_nonce"]
+            if nonce != self._discovered_nonce:
+                self._discovered_nonce = nonce
+                if self._server_nonce is not None and nonce != self._server_nonce:
+                    self.stop_playback()
+                    self._server_nonce = None
+                    self._hello_attempts = 0
+                    self._first_hello_time = None
+            # Respect the retry cadence even if repeated beacons arrive.
+            self._send_hello()
+            return
+        if (
+            frame["kind"] != "ready"
+            or frame["client_nonce"] != self._client_nonce
+            or self._hello_attempts == 0
+            or not self._can_send_hello()
+            or (
+                self._discovered_nonce is not None
+                and frame["session_nonce"] != self._discovered_nonce
+            )
+        ):
+            return
+        self._server_nonce = frame["session_nonce"]
+        if not self._connected_notice:
+            self._connected_notice = True
+            _screenmessage(self._base, "SPP music connected", color=(0.3, 1.0, 0.4))
 
     def _ensure_catalog(self):
         package_path = self._get_package_path(AUDIO_PACKAGE_ID)
@@ -286,13 +362,20 @@ class ClientRuntime(object):
         return True
 
     def _silence_game_music(self):
-        """Pause regular scene music and retain enough state to restore it."""
+        """Hold scene music only for the lifetime of this local victory cue.
+
+        Score screens can request their soundtrack after our network event.
+        Preserve those requests, but defer the actual playback until the cue
+        ends. This instance-only hook is removed on every teardown path.
+        """
         self._music_restore = None
+        self._music_guard = None
         try:
             classic = self._base.app.classic
             music = classic.music
             mode = music._music_mode
             current = music.music_types.get(mode)
+            original = music.do_play_music
             try:
                 original_volume = min(
                     1.0,
@@ -301,19 +384,95 @@ class ClientRuntime(object):
             except Exception:
                 original_volume = 1.0
             try:
-                music.do_play_music(None, mode=mode)
+                original(None, mode=mode)
             except TypeError:
-                music.do_play_music(None)
+                original(None)
             self._music_restore = (music, mode, current, original_volume)
+            instance_values = getattr(music, "__dict__", {})
+            guard = {
+                "active": True,
+                "original": original,
+                "had_instance": "do_play_music" in instance_values,
+                "instance_value": instance_values.get("do_play_music"),
+                "pending": {},
+            }
+
+            def defer_music(*args, **kwargs):
+                if not guard["active"]:
+                    # Another mod may retain this function inside its own
+                    # wrapper. Once our cue ends, that chain must pass through
+                    # even when we no longer own the instance method slot.
+                    return guard["original"](*args, **kwargs)
+                # Keep desired music_types state accurate, including requests
+                # for an inactive mode, without touching either audio player.
+                request_mode = (
+                    args[2] if len(args) > 2
+                    else kwargs.get("mode", getattr(type(mode), "REGULAR", mode))
+                )
+                value = args[0] if args else kwargs.get("musictype")
+                music_type = getattr(self._scene, "MusicType", None)
+                if value is not None and music_type is not None:
+                    try:
+                        value = music_type(value)
+                    except (TypeError, ValueError):
+                        value = None
+                music.music_types[request_mode] = value
+                guard["pending"][request_mode] = (args, dict(kwargs))
+
+            guard["wrapper"] = defer_music
+            music.do_play_music = defer_music
+            self._music_guard = guard
         except Exception:
             pass
 
     def _restore_game_music(self):
         state = self._music_restore
         self._music_restore = None
+        guard = self._music_guard
+        self._music_guard = None
+        if guard is not None:
+            guard["active"] = False
         if state is None:
             return
         music, mode, previous, original_volume = state
+        if guard is not None:
+            if getattr(music, "do_play_music", None) is not guard["wrapper"]:
+                # Another mod now owns the method/audio slot. Do not replace
+                # its hook or restart our older soundtrack over its work.
+                return
+            if guard["had_instance"]:
+                music.do_play_music = guard["instance_value"]
+            else:
+                delattr(music, "do_play_music")
+            if self._platform == "android":
+                try:
+                    self._base.music_player_set_volume(
+                        min(1.0, max(0.0, float(self._base.app.config.get(
+                            "Music Volume", original_volume
+                        ))))
+                    )
+                except Exception:
+                    pass
+            active_mode = music._music_mode
+            pending = guard["pending"].get(active_mode)
+            try:
+                if pending is not None:
+                    args, kwargs = pending
+                    # Playback was intentionally interrupted. Even a continuous
+                    # request must restart once we release the audio slot.
+                    if len(args) > 1:
+                        args = (args[0], False) + args[2:]
+                    else:
+                        kwargs["continuous"] = False
+                    guard["original"](*args, **kwargs)
+                elif active_mode is mode:
+                    try:
+                        guard["original"](previous, mode=mode)
+                    except TypeError:
+                        guard["original"](previous)
+            except Exception:
+                self._warn_once("music-restore", "normal music could not be restored.")
+            return
         try:
             still_owns_music_slot = (
                 music._music_mode is mode
@@ -351,7 +510,11 @@ class ClientRuntime(object):
     def _play_event(self, event, volume):
         if self._player is None or not self._ensure_catalog():
             return
-        if event.get("client_nonce") != self._client_nonce:
+        if (
+            not self._is_spp_connection()
+            or event.get("client_nonce") != self._client_nonce
+            or event.get("session_nonce") != self._server_nonce
+        ):
             return
         event_key = (event["session_nonce"], event["event_id"])
         if not self._remember_event(event_key):
@@ -373,13 +536,23 @@ class ClientRuntime(object):
         self._last_event_time = now
         self._last_volume = volume
         self._playing = True
+        print(
+            "[SPP Client] playing %s victory cue %d/3 on %s"
+            % (event["team"], event["stage"], self._platform)
+        )
         self._play_token += 1
         token = self._play_token
-        self._stop_timer = _make_timer(
-            self._base,
-            cue["duration"] + 0.15,
-            lambda: self._stop_if_current(token),
-        )
+        try:
+            self._stop_timer = _make_timer(
+                self._base,
+                cue["duration"] + 0.15,
+                lambda: self._stop_if_current(token),
+            )
+        except Exception:
+            # Never leave a scene-music hook or an unbounded MP3 running if a
+            # different BombSquad build rejects the timer API.
+            self.stop_playback()
+            self._warn_once("cue-timer", "victory music timer is unavailable.")
 
     def _stop_if_current(self, token):
         if token == self._play_token:
@@ -396,10 +569,15 @@ class ClientRuntime(object):
             # newer music.
             music, mode, _previous, _volume = self._music_restore
             try:
-                stop_owned_audio = (
-                    music._music_mode is mode
-                    and music.music_types.get(mode) is None
-                )
+                if self._music_guard is not None:
+                    stop_owned_audio = (
+                        music.do_play_music is self._music_guard["wrapper"]
+                    )
+                else:
+                    stop_owned_audio = (
+                        music._music_mode is mode
+                        and music.music_types.get(mode) is None
+                    )
             except Exception:
                 stop_owned_audio = False
         if self._player is not None and self._playing and stop_owned_audio:
@@ -436,6 +614,13 @@ class ClientRuntime(object):
             self._connection_name = connection_name
             self._client_nonce = uuid.uuid4().hex[:16]
             self._last_hello_time = -1000.0
+            self._first_hello_time = None
+            self._hello_attempts = 0
+            self._discovered_nonce = None
+            self._server_nonce = None
+            self._connected_notice = False
+            self._hello_timeout_warned = False
+            self._last_event_time = -1000.0
             self._messages = current
             self._seen_events.clear()
             self._seen_order.clear()
@@ -447,11 +632,15 @@ class ClientRuntime(object):
 
         additions = _new_messages(self._messages, current)
         self._messages = current
-        if not enabled or not self._is_spp_connection():
+        if self._connection == "disconnected":
             return
         for message in additions:
+            control = parse_control_message(message)
+            if control is not None:
+                self._handle_control(control)
+                continue
             event = parse_chat_message(message)
-            if event is not None:
+            if enabled and self._is_spp_connection() and event is not None:
                 self._play_event(event, volume)
 
 
