@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+from enum import Enum
 import json
 from pathlib import Path
 import sys
@@ -45,6 +46,22 @@ CORE = MODULES["spp_client_core"]
 
 
 class ProtocolTests(unittest.TestCase):
+    def test_strict_discovery_and_ready_frames(self):
+        self.assertEqual(
+            PROTOCOL.parse_control_message("SPP MUSIC: SPP1|DISCOVER|012345abcdef"),
+            {"kind": "discover", "session_nonce": "012345abcdef"},
+        )
+        ready = "SPP MUSIC: SPP1|READY|012345abcdef|0123456789abcdef"
+        self.assertEqual(PROTOCOL.parse_control_message(ready)["kind"], "ready")
+        for message in (
+            "Player: " + ready, ready + "\n", ready + " extra",
+            ready.replace("SPP MUSIC:", "Player:"),
+            ready.replace("012345abcdef", "ABCDEF012345"),
+            ready.replace("0123456789abcdef", "short"),
+            "SPP MUSIC: SPP1|DISCOVER|../../song.mp3", None, 12,
+        ):
+            self.assertIsNone(PROTOCOL.parse_control_message(message))
+
     def test_round_trip_all_allowed_events(self):
         for team in ("SUPER", "PRO"):
             for stage in (1, 2, 3):
@@ -444,6 +461,7 @@ class RuntimeTests(unittest.TestCase):
                 "abcdef012345",
             )
             chat.append("SPP MUSIC: " + payload)
+            chat.insert(-1, "SPP MUSIC: SPP1|READY|012345abcdef|0123456789abcdef")
             runtime._poll()
             self.assertEqual(played[0], ("play", "super_round_2.mp3", 0.65))
             self.assertEqual(music.calls, [None])
@@ -504,6 +522,321 @@ class RuntimeTests(unittest.TestCase):
             )
         )
         runtime._poll()
+
+
+class HandshakeRuntimeTests(unittest.TestCase):
+    """Use real client code with a native-chat-shaped test transport."""
+
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name)
+        CatalogTests().make_catalog(self.root)
+        self.chat = []
+        self.outgoing = []
+        self.notices = []
+        self.audio = []
+        self.timers = []
+        self.now = 100.0
+        self.host = {"name": "Old Witchly Name", "port": 43210}
+        self.settings = {"enabled": True, "volume": 0.65}
+
+        class Mode(Enum):
+            REGULAR = "regular"
+            TEST = "test"
+
+        self.mode = Mode
+
+        class Music:
+            def __init__(inner):
+                inner._music_mode = Mode.REGULAR
+                inner.music_types = {Mode.REGULAR: "Scores", Mode.TEST: None}
+                inner.calls = []
+
+            def do_play_music(inner, value, continuous=False,
+                              mode=Mode.REGULAR, testsoundtrack=None):
+                inner.calls.append((value, continuous, mode, testsoundtrack))
+                inner.music_types[mode] = value
+
+        self.music = Music()
+
+        def timer(delay, callback, repeat=False):
+            result = types.SimpleNamespace(delay=delay, callback=callback, repeat=repeat)
+            self.timers.append(result)
+            return result
+
+        self.base = types.SimpleNamespace(
+            AppTimer=timer,
+            screenmessage=lambda message, **_kwargs: self.notices.append(message),
+            music_player_set_volume=lambda volume: self.audio.append(("os-volume", volume)),
+            app=types.SimpleNamespace(
+                config={"Music Volume": 0.9},
+                classic=types.SimpleNamespace(music=self.music),
+            ),
+        )
+        self.scene = types.SimpleNamespace(
+            get_connection_to_host_info_2=lambda: self.host,
+            get_chat_messages=lambda: list(self.chat),
+            chatmessage=self.outgoing.append,
+        )
+        self.runtime = CORE.ClientRuntime(
+            {
+                "package_id": "spp-client-core", "package_version": CORE.CORE_VERSION,
+                "get_package_path": lambda _package_id: str(self.root),
+                "get_music_settings": lambda: dict(self.settings),
+            }, self.base, self.scene, True,
+        )
+        self.runtime._platform = "windows"
+        self.runtime._player = types.SimpleNamespace(
+            play=lambda path, volume: self.audio.append(("play", Path(path).name, volume)),
+            stop=lambda: self.audio.append(("stop",)),
+            set_volume=lambda volume: self.audio.append(("volume", volume)),
+        )
+        self.runtime._ensure_catalog()
+        self.runtime._client_nonce = "0123456789abcdef"
+        patcher = mock.patch.object(CORE.time, "monotonic", side_effect=lambda: self.now)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.addCleanup(self.runtime.shutdown)
+
+    def add(self, message):
+        self.chat.append(message)
+        self.chat[:] = self.chat[-40:]
+        self.runtime._poll()
+
+    def connect(self):
+        self.add("SPP MUSIC: SPP1|DISCOVER|012345abcdef")
+        self.add("SPP MUSIC: SPP1|READY|012345abcdef|" + self.runtime._client_nonce)
+
+    def event(self, team="SUPER", stage=1, event_id="abcdef012345",
+              session="012345abcdef", client_nonce=None):
+        self.add("SPP MUSIC: " + PROTOCOL.build_payload(
+            team, stage, session, client_nonce or self.runtime._client_nonce, event_id
+        ))
+
+    def test_name_mismatch_discovery_ack_and_all_six_cues(self):
+        self.connect()
+        self.assertTrue(self.runtime._is_spp_connection())
+        self.assertEqual(self.notices, ["SPP music connected"])
+        for team_index, team in enumerate(("SUPER", "PRO")):
+            for stage in (1, 2, 3):
+                self.now += 2
+                self.event(team, stage, "%012x" % (team_index * 3 + stage))
+                self.assertEqual(self.audio[-1], (
+                    "play", "%s_round_%d.mp3" % (team.lower(), stage), 0.65
+                ))
+        self.assertEqual(len([row for row in self.audio if row[0] == "play"]), 6)
+        self.assertEqual(len(self.outgoing), 1)
+
+    def test_no_arbitrary_server_hello_or_unsolicited_ack_authority(self):
+        self.add("Player: SPP MUSIC: SPP1|DISCOVER|012345abcdef")
+        self.add("SPP MUSIC: SPP1|READY|012345abcdef|0123456789abcdef")
+        self.event()
+        self.assertEqual(self.outgoing, [])
+        self.assertEqual(self.audio, [])
+        self.assertFalse(self.runtime._is_spp_connection())
+
+    def test_matching_name_still_requires_ack(self):
+        self.host["name"] = CORE.PUBLIC_PARTY_NAME
+        self.runtime._poll()
+        self.assertEqual(len(self.outgoing), 1)
+        self.event()
+        self.assertEqual(self.audio, [])
+        self.add("SPP MUSIC: SPP1|READY|012345abcdef|" + self.runtime._client_nonce)
+        self.event(event_id="abcdef012346")
+        self.assertTrue(self.audio)
+
+    def test_initial_registration_retries_after_delayed_account_auth(self):
+        self.add("SPP MUSIC: SPP1|DISCOVER|012345abcdef")
+        for advance in (1, 1, 1, 1, 1):
+            self.now += advance
+            self.add("SPP MUSIC: SPP1|DISCOVER|012345abcdef")
+        self.assertEqual(len(self.outgoing), 1)
+        self.now += 1
+        self.runtime._poll()
+        self.assertEqual(len(self.outgoing), 2)
+        self.add("SPP MUSIC: SPP1|READY|012345abcdef|" + self.runtime._client_nonce)
+        self.now += 7
+        self.runtime._poll()
+        self.assertEqual(len(self.outgoing), 2)
+        self.now += 38
+        self.runtime._poll()
+        self.assertEqual(len(self.outgoing), 3)
+        self.add("SPP MUSIC: SPP1|READY|012345abcdef|" + self.runtime._client_nonce)
+        self.assertEqual(self.notices.count("SPP music connected"), 1)
+
+    def test_timeout_warns_once_and_slows_retry_cadence(self):
+        self.add("SPP MUSIC: SPP1|DISCOVER|012345abcdef")
+        for delta in (6, 6, 6, 6):
+            self.now += delta
+            self.runtime._poll()
+        self.assertEqual(len(self.outgoing), 3)
+        self.assertEqual(len(self.notices), 1)
+        self.assertIn("waiting for server confirmation", self.notices[0])
+        self.now += 33
+        self.runtime._poll()
+        self.assertEqual(len(self.outgoing), 4)
+
+    def test_wrong_nonce_session_duplicate_and_stale_frames_do_not_play(self):
+        self.add("SPP MUSIC: SPP1|DISCOVER|012345abcdef")
+        self.add("SPP MUSIC: SPP1|READY|012345abcdef|ffffffffffffffff")
+        self.add("SPP MUSIC: SPP1|READY|ffffffffffff|0123456789abcdef")
+        self.event()
+        self.assertEqual(self.audio, [])
+        self.add("SPP MUSIC: SPP1|READY|012345abcdef|0123456789abcdef")
+        self.event(client_nonce="ffffffffffffffff")
+        self.event(session="ffffffffffff")
+        self.assertEqual(self.audio, [])
+        self.event()
+        self.now += 2
+        self.event()
+        self.assertEqual(len([row for row in self.audio if row[0] == "play"]), 1)
+
+    def test_disconnect_and_reconnect_ignore_retained_history(self):
+        self.connect()
+        self.event()
+        old_nonce = self.runtime._client_nonce
+        self.host = None
+        self.runtime._poll()
+        self.assertFalse(self.runtime._playing)
+        self.assertFalse(self.runtime._is_spp_connection())
+        self.add("SPP MUSIC: SPP1|DISCOVER|012345abcdef")
+        self.assertEqual(len(self.outgoing), 1)
+        self.host = {"name": "Old Witchly Name", "port": 43210}
+        self.runtime._poll()
+        self.runtime._poll()
+        self.assertEqual(len(self.outgoing), 1)
+        self.assertNotEqual(self.runtime._client_nonce, old_nonce)
+        self.add("SPP MUSIC: SPP1|READY|012345abcdef|" + old_nonce)
+        self.assertFalse(self.runtime._is_spp_connection())
+        self.connect()
+        self.event(client_nonce=old_nonce, event_id="abcdef012349")
+        self.assertEqual(len([row for row in self.audio if row[0] == "play"]), 1)
+
+    def test_scene_music_is_deferred_for_cue_then_latest_request_restored(self):
+        for platform in ("windows", "android"):
+            with self.subTest(platform=platform):
+                self.runtime._platform = platform
+                self.connect()
+                self.now += 2
+                self.event(event_id="00000000000" + ("1" if platform == "windows" else "2"))
+                calls_before = len(self.music.calls)
+                self.music.do_play_music("Scores delayed", continuous=True)
+                self.music.do_play_music("Next Activity", continuous=True,
+                                         testsoundtrack={"custom": "keep"})
+                self.assertEqual(len(self.music.calls), calls_before)
+                self.assertTrue(self.runtime._playing)
+                self.runtime.stop_playback()
+                self.assertEqual(self.music.calls[-1], (
+                    "Next Activity", False, self.mode.REGULAR, {"custom": "keep"}
+                ))
+                self.assertNotIn("do_play_music", self.music.__dict__)
+
+    def test_deferred_music_preserves_other_modes_and_positional_arguments(self):
+        self.connect()
+        self.event()
+        self.music.do_play_music("Next regular", True, self.mode.REGULAR, {"a": 1})
+        self.music.do_play_music("Test track", mode=self.mode.TEST)
+        self.runtime.stop_playback()
+        self.assertEqual(self.music.calls[-1], (
+            "Next regular", False, self.mode.REGULAR, {"a": 1}
+        ))
+        self.assertEqual(self.music.music_types[self.mode.TEST], "Test track")
+
+    def test_changed_active_music_mode_restores_its_own_request(self):
+        self.connect()
+        self.event()
+        self.music.do_play_music("Next regular", mode=self.mode.REGULAR)
+        self.music._music_mode = self.mode.TEST
+        self.music.do_play_music("Test track", mode=self.mode.TEST)
+        self.runtime.stop_playback()
+        self.assertEqual(self.music.calls[-1][0], "Test track")
+        self.assertIs(self.music.calls[-1][2], self.mode.TEST)
+        self.assertEqual(self.music.music_types[self.mode.REGULAR], "Next regular")
+
+    def test_timer_failure_and_normal_duration_both_release_music_guard(self):
+        self.connect()
+        self.event(stage=3)
+        self.assertEqual(self.timers[-1].delay, 18.15)
+        self.timers[-1].callback()
+        self.assertFalse(self.runtime._playing)
+        self.assertNotIn("do_play_music", self.music.__dict__)
+        self.now += 2
+        with mock.patch.object(CORE, "_make_timer", side_effect=RuntimeError("timer failure")):
+            self.event(event_id="abcdef012349")
+        self.assertFalse(self.runtime._playing)
+        self.assertNotIn("do_play_music", self.music.__dict__)
+        self.assertIn(("stop",), self.audio)
+        self.assertTrue(any("timer is unavailable" in message for message in self.notices))
+
+    def test_guard_respects_newer_third_party_hook(self):
+        self.runtime._platform = "android"
+        self.connect()
+        self.event()
+        external_hook = mock.Mock()
+        self.music.do_play_music = external_hook
+        self.runtime.stop_playback()
+        self.assertIs(self.music.do_play_music, external_hook)
+        external_hook.assert_not_called()
+        self.assertNotIn(("stop",), self.audio)
+
+    def test_captured_guard_becomes_passthrough_after_stop_or_shutdown(self):
+        for finish in (self.runtime.stop_playback, self.runtime.shutdown):
+            with self.subTest(finish=finish.__name__):
+                self.connect()
+                self.now += 2
+                self.event(event_id="00000000000" + ("1" if finish.__name__ == "stop_playback" else "2"))
+                captured = self.music.do_play_music
+                def wrap(previous):
+                    def newer(*args, **kwargs):
+                        return previous(*args, **kwargs)
+                    return newer
+                newer_wrapper = wrap(captured)
+                self.music.do_play_music = newer_wrapper
+                finish()
+                self.music.do_play_music("After cue", continuous=True)
+                self.assertEqual(self.music.calls[-1][0:2], ("After cue", True))
+                self.assertIs(self.music.do_play_music, newer_wrapper)
+
+    def test_captured_guard_becomes_passthrough_after_playback_failure(self):
+        self.connect()
+        captured = []
+        def fail_playback(_path, _volume):
+            old_hook = self.music.do_play_music
+            def newer_wrapper(*args, **kwargs):
+                return old_hook(*args, **kwargs)
+            captured.append(newer_wrapper)
+            self.music.do_play_music = newer_wrapper
+            raise RuntimeError("playback failure after another mod wrapped music")
+        self.runtime._player.play = fail_playback
+        self.event()
+        self.assertFalse(self.runtime._playing)
+        self.music.do_play_music("After failure")
+        self.assertEqual(self.music.calls[-1][0], "After failure")
+        self.assertIs(self.music.do_play_music, captured[0])
+
+    def test_playback_error_restores_music_and_removes_guard(self):
+        self.connect()
+        self.runtime._player.play = mock.Mock(side_effect=RuntimeError("test failure"))
+        self.event()
+        self.assertFalse(self.runtime._playing)
+        self.assertNotIn("do_play_music", self.music.__dict__)
+        self.assertEqual(self.music.calls[-1][0], "Scores")
+        self.assertTrue(any("could not play" in message for message in self.notices))
+
+    def test_disabled_music_and_shutdown_remove_guard(self):
+        self.connect()
+        self.event()
+        self.settings["enabled"] = False
+        self.runtime._poll()
+        self.assertNotIn("do_play_music", self.music.__dict__)
+        self.assertFalse(self.runtime._playing)
+        self.settings["enabled"] = True
+        self.now += 2
+        self.event(event_id="abcdef012349")
+        self.runtime.shutdown()
+        self.assertNotIn("do_play_music", self.music.__dict__)
+        self.assertFalse(self.runtime._playing)
 
 
 if __name__ == "__main__":

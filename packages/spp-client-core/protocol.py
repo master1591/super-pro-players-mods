@@ -24,6 +24,35 @@ _EVENT_RE = re.compile(
 )
 _HEX_12_RE = re.compile(r"^[0-9a-f]{12}$", re.ASCII)
 _HEX_16_RE = re.compile(r"^[0-9a-f]{16}$", re.ASCII)
+_DISCOVERY_RE = re.compile(
+    r"^SPP MUSIC: SPP1\|DISCOVER\|([0-9a-f]{12})$", re.ASCII
+)
+_READY_RE = re.compile(
+    r"^SPP MUSIC: SPP1\|READY\|([0-9a-f]{12})\|([0-9a-f]{16})$",
+    re.ASCII,
+)
+
+
+def parse_control_message(message):
+    """Parse discovery/registration frames, never arbitrary chat commands.
+
+    These fixed frames identify a cooperating host, not a cryptographically
+    trusted identity. The runtime additionally requires a live connection,
+    fresh chat history and a matching, randomly generated client nonce.
+    """
+    if not isinstance(message, str) or len(message) > MAX_FRAME_CHARS:
+        return None
+    match = _DISCOVERY_RE.fullmatch(message)
+    if match is not None:
+        return {"kind": "discover", "session_nonce": match.group(1)}
+    match = _READY_RE.fullmatch(message)
+    if match is not None:
+        return {
+            "kind": "ready",
+            "session_nonce": match.group(1),
+            "client_nonce": match.group(2),
+        }
+    return None
 
 
 def build_payload(team, stage, session_nonce, client_nonce, event_id):

@@ -1,22 +1,22 @@
 {
   "schema": 1,
-  "release_sequence": 2,
+  "release_sequence": 3,
   "channel": "stable",
   "title": "SUPER PRO PLAYERS official packages",
   "packages": [
     {
       "id": "spp-client-core",
       "name": "SPP Client Core",
-      "version": "0.1.0-beta",
+      "version": "0.1.1-beta",
       "api_versions": [
         9
       ],
       "minimum_build": 22796,
       "maximum_build": null,
-      "download_url": "https://raw.githubusercontent.com/master1591/super-pro-players-mods/main/release/spp-client-core-0.1.0-beta.zip",
-      "download_size": 7844,
-      "unpacked_size": 24862,
-      "archive_sha256": "362f1b0452b75a12a2fed0f9b8cf85c1dcca21832c0125f5dfc556f114d8c0e1",
+      "download_url": "https://raw.githubusercontent.com/master1591/super-pro-players-mods/main/release/spp-client-core-0.1.1-beta.zip",
+      "download_size": 9897,
+      "unpacked_size": 34010,
+      "archive_sha256": "3d357eeba51b7412fc0068b88ef7a07777c324c1054ca81c82507314bbac9aba",
       "files": [
         {
           "path": "README.md",
@@ -30,13 +30,13 @@
         },
         {
           "path": "protocol.py",
-          "size": 2995,
-          "sha256": "7719737b0b7a964792641a68c70f4b4254b187c14459ebd4ae4d352da64ee22c"
+          "size": 3995,
+          "sha256": "bdcde5094959b52f65dfeb8ce74f88db1b9e1e3c555e3f09cc4f2c70d808c46a"
         },
         {
           "path": "spp_client_core.py",
-          "size": 16715,
-          "sha256": "ec1da773dd8a14758f96e3443a612be1291507113c1e8d43439ade2b8268afda"
+          "size": 24863,
+          "sha256": "3b5486bb80f7ba2ec92b619836e675075ca6ae379874e6e3d18b82113bbb30ea"
         }
       ],
       "entrypoint": "spp_client_core.py",

@@ -89,6 +89,35 @@ SUPER and PRO each have a 4-second cue for 1/3, a 7-second cue for 2/3, and an
 18-second final cue for 3/3. Music volume and the victory-music toggle remain
 available in the manager settings.
 
+Client core **0.1.1-beta** fixes server discovery and score-screen music timing.
+Existing users only need **CHECK → INSTALL / UPDATE ALL**, confirm the code
+update if asked, and fully restart BombSquad. The manager itself remains
+0.1.1-beta; the unchanged audio package remains 0.1.0-beta.
+
+After joining the updated SPP server, look for **SPP music connected**. This
+means the server acknowledged this client's registration; it is not an audio
+hardware test. Discovery no longer depends on the server's displayed name.
+Short discovery messages may appear in chat before registration. Only the six
+verified local clips can be selected by the server, and normal music resumes
+after the clip ends, music is disabled, or the client disconnects.
+
+The Windows and Android playback paths are covered by isolated tests, but
+actual speaker output must still be checked on both devices after updating.
+
+### Installed but victory music is silent
+
+1. Confirm the manager lists `spp-client-core: 0.1.1-beta` and
+   `spp-victory-audio: 0.1.0-beta`, with Victory music enabled and volume above zero.
+2. Fully close and reopen BombSquad, then rejoin SPP and wait for
+   **SPP music connected**. If it never appears, reconnect once and send staff
+   the developer-console lines beginning `[SPP Client]`.
+3. The server owner should confirm a successful Witchly upload before restarting,
+   then look for `SUPER PRO READY version=2026.09.16.3`. Registration and round
+   event diagnostics begin `SUPER PRO MUSIC`.
+4. If connected but silent, report which device, team and round (1/3, 2/3, 3/3)
+   failed, plus any playback warning. Do not reinstall unrelated mods or delete
+   your game settings to troubleshoot this feature.
+
 ## Troubleshooting
 
 ### Nothing appears after pressing Exec
