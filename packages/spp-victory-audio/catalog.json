@@ -1,0 +1,16 @@
+{
+  "schema": 1,
+  "protocol": "SPP1",
+  "tracks": {
+    "super": {
+      "1": {"path": "audio/super_round_1.mp3", "duration": 4.0},
+      "2": {"path": "audio/super_round_2.mp3", "duration": 7.0},
+      "3": {"path": "audio/super_round_3.mp3", "duration": 18.0}
+    },
+    "pro": {
+      "1": {"path": "audio/pro_round_1.mp3", "duration": 4.0},
+      "2": {"path": "audio/pro_round_2.mp3", "duration": 7.0},
+      "3": {"path": "audio/pro_round_3.mp3", "duration": 18.0}
+    }
+  }
+}
