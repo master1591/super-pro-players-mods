@@ -1,9 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Prepare the six private test cues supplied by the server owner. Outputs are
-# intentionally gitignored. Running this script does not grant redistribution
-# rights; release audio still requires permission from the rights holders.
+# Prepare the six SPP release cues supplied and approved by the server owner.
+# Raw cue files remain ignored; only the reviewed package archive is released.
 
 if [[ $# -ne 3 ]]; then
   echo "Usage: $0 <super-team-source.mp3> <pro-team-source.mp3> <output-directory>" >&2
@@ -49,4 +48,4 @@ make_clip "$pro_source" 2.000 4.000 -18 3.750 0.250 "$output_dir/pro_round_1.mp3
 make_clip "$pro_source" 9.700 7.000 -16 6.650 0.350 "$output_dir/pro_round_2.mp3"
 make_clip "$pro_source" 61.930 18.000 -14 17.400 0.600 "$output_dir/pro_round_3.mp3"
 
-echo "Prepared six local SPP cues in $output_dir"
+echo "Prepared six SPP release cues in $output_dir"

@@ -2,7 +2,8 @@
 
 A one-command installer and updater for official SUPER PRO PLAYERS BombSquad client mods.
 
-> **Beta:** The manager is ready, but the public gameplay-package catalog is empty for now. Victory music and other SPP packages will be published only after testing.
+> **Beta:** The first official package release adds synchronized SUPER and PRO
+> victory music for supported BombSquad API 9 builds on Windows and Android.
 
 ## Quick install (Windows and Android)
 
@@ -73,14 +74,20 @@ Versions older than 1.5.23 are unsupported because they predate the normal plugi
 
 SHA-256 protects against corruption or unexpected changes. It is not a publisher signature if the official repository itself is compromised.
 
-## Current limitation
+## Victory-music package
 
-The public package catalog is intentionally empty. Installing the manager does **not** install victory music or other gameplay packages yet. A `No packages available` result is expected until the first package is published.
+Open the manager, press **CHECK**, and then press **INSTALL / UPDATE ALL**. The
+manager downloads and verifies both the SPP client core and victory-audio
+package. Fully close and reopen BombSquad after installation.
 
-The first client-core and victory-audio packages are under offline testing.
-Their test builder writes only to the ignored `release/` directory; it cannot
-publish audio or alter the stable manifest. Public audio release requires
-documented redistribution rights for every included recording.
+The victory package currently targets BombSquad API 9 builds 22796 and newer
+on Windows and Android. The manager itself continues to support APIs 6-9, but
+older APIs will show the victory packages as incompatible instead of forcing
+an unsafe installation.
+
+SUPER and PRO each have a 4-second cue for 1/3, a 7-second cue for 2/3, and an
+18-second final cue for 3/3. Music volume and the victory-music toggle remain
+available in the manager settings.
 
 ## Troubleshooting
 

@@ -1,10 +1,5 @@
 #!/usr/bin/env python3
-"""Build deterministic SPP package archives for offline/native testing.
-
-This deliberately writes only to the gitignored ``release`` directory and
-never edits the public manifest. Audio publication is a separate release step
-which requires documented redistribution rights.
-"""
+"""Build deterministic SPP client package archives and release metadata."""
 
 from __future__ import annotations
 
@@ -25,7 +20,7 @@ DOWNLOAD_ROOT = (
 )
 ZIP_TIMESTAMP = (2020, 1, 1, 0, 0, 0)
 CORE_VERSION = "0.1.0-beta"
-AUDIO_VERSION = "0.1.0-local"
+AUDIO_VERSION = "0.1.0-beta"
 
 
 def digest(data: bytes) -> str:
@@ -132,10 +127,8 @@ def build(output: Path, sequence: int) -> Path:
     manifest = {
         "schema": 1,
         "release_sequence": sequence,
-        # Keep the same schema/channel contract the installed beta manager
-        # validates, even though this manifest remains local and gitignored.
         "channel": "stable",
-        "title": "SUPER PRO PLAYERS local test release",
+        "title": "SUPER PRO PLAYERS official packages",
         "packages": [
             package_record(
                 package_id="spp-client-core",
@@ -157,7 +150,7 @@ def build(output: Path, sequence: int) -> Path:
             ),
         ],
     }
-    manifest_path = output / "manifest.local.json"
+    manifest_path = output / "manifest.release.json"
     manifest_path.write_text(
         json.dumps(manifest, indent=2, ensure_ascii=False) + "\n",
         encoding="utf-8",
@@ -173,8 +166,8 @@ def main() -> int:
     if args.sequence < 1:
         parser.error("--sequence must be positive")
     manifest = build(args.output.resolve(), args.sequence)
-    print(f"Built local test release: {manifest}")
-    print("Audio remains local and gitignored; nothing was published.")
+    print(f"Built deterministic SPP release: {manifest}")
+    print("Nothing is published until the generated files are reviewed and pushed.")
     return 0
 
 

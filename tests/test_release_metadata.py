@@ -2,9 +2,11 @@
 
 import ast
 import hashlib
+import json
 from pathlib import Path
 import re
 import unittest
+import zipfile
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -34,6 +36,39 @@ class ReleaseMetadataTests(unittest.TestCase):
         self.assertEqual(hashlib.sha256(installer).hexdigest(), digest.group(1))
         self.assertIn(".read(131073)", command)
         self.assertIn("{'__name__':'__main__'}", command)
+
+    def test_public_manifest_matches_every_release_archive_byte(self):
+        manifest = json.loads(
+            (ROOT / "manifest.json").read_text(encoding="utf-8")
+        )
+        self.assertEqual(manifest["schema"], 1)
+        self.assertEqual(manifest["channel"], "stable")
+        self.assertGreaterEqual(manifest["release_sequence"], 2)
+        self.assertEqual(
+            [item["id"] for item in manifest["packages"]],
+            ["spp-client-core", "spp-victory-audio"],
+        )
+
+        for package in manifest["packages"]:
+            archive_name = package["download_url"].rsplit("/", 1)[-1]
+            archive_path = ROOT / "release" / archive_name
+            archive_bytes = archive_path.read_bytes()
+            self.assertEqual(len(archive_bytes), package["download_size"])
+            self.assertEqual(
+                hashlib.sha256(archive_bytes).hexdigest(),
+                package["archive_sha256"],
+            )
+            expected = {item["path"]: item for item in package["files"]}
+            with zipfile.ZipFile(archive_path, "r") as archive:
+                members = [item for item in archive.infolist() if not item.is_dir()]
+                self.assertEqual({item.filename for item in members}, set(expected))
+                for member in members:
+                    data = archive.read(member)
+                    record = expected[member.filename]
+                    self.assertEqual(len(data), record["size"])
+                    self.assertEqual(
+                        hashlib.sha256(data).hexdigest(), record["sha256"]
+                    )
 
 
 if __name__ == "__main__":

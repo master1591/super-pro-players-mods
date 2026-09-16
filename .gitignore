@@ -2,8 +2,10 @@ __pycache__/
 *.py[cod]
 *.tmp
 
-# Locally prepared music cues are never committed without documented
-# redistribution rights. The catalog and build tooling remain reviewable.
+# Raw prepared music cues remain out of the source tree. The reviewed,
+# checksummed package archives below are the only distributed audio files.
 packages/spp-victory-audio/audio/*
 !packages/spp-victory-audio/audio/.gitkeep
-release/
+release/*
+!release/spp-client-core-0.1.0-beta.zip
+!release/spp-victory-audio-0.1.0-beta.zip
