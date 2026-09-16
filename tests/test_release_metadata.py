@@ -69,8 +69,12 @@ class ReleaseMetadataTests(unittest.TestCase):
                     self.assertEqual(
                         hashlib.sha256(data).hexdigest(), record["sha256"]
                     )
-                    source = ROOT / "packages" / package["id"] / member.filename
-                    self.assertEqual(data, source.read_bytes())
+                    # Audio is distributed only in its verified ZIP, not as
+                    # duplicate loose MP3s in Git. Code/catalog sources ARE
+                    # tracked and must match the release byte for byte.
+                    if package["id"] == "spp-client-core" or member.filename == "catalog.json":
+                        source = ROOT / "packages" / package["id"] / member.filename
+                        self.assertEqual(data, source.read_bytes())
 
     def test_core_release_version_matches_runtime_and_builder(self):
         manifest = json.loads((ROOT / "manifest.json").read_text(encoding="utf-8"))
