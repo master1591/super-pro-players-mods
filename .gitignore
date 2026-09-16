@@ -2,3 +2,8 @@ __pycache__/
 *.py[cod]
 *.tmp
 
+# Locally prepared music cues are never committed without documented
+# redistribution rights. The catalog and build tooling remain reviewable.
+packages/spp-victory-audio/audio/*
+!packages/spp-victory-audio/audio/.gitkeep
+release/

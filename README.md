@@ -77,6 +77,11 @@ SHA-256 protects against corruption or unexpected changes. It is not a publisher
 
 The public package catalog is intentionally empty. Installing the manager does **not** install victory music or other gameplay packages yet. A `No packages available` result is expected until the first package is published.
 
+The first client-core and victory-audio packages are under offline testing.
+Their test builder writes only to the ignored `release/` directory; it cannot
+publish audio or alter the stable manifest. Public audio release requires
+documented redistribution rights for every included recording.
+
 ## Troubleshooting
 
 ### Nothing appears after pressing Exec
