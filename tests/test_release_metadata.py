@@ -43,7 +43,7 @@ class ReleaseMetadataTests(unittest.TestCase):
         )
         self.assertEqual(manifest["schema"], 1)
         self.assertEqual(manifest["channel"], "stable")
-        self.assertGreaterEqual(manifest["release_sequence"], 3)
+        self.assertGreaterEqual(manifest["release_sequence"], 4)
         self.assertEqual(
             [item["id"] for item in manifest["packages"]],
             ["spp-client-core", "spp-victory-audio"],
@@ -79,7 +79,7 @@ class ReleaseMetadataTests(unittest.TestCase):
     def test_core_release_version_matches_runtime_and_builder(self):
         manifest = json.loads((ROOT / "manifest.json").read_text(encoding="utf-8"))
         core = next(p for p in manifest["packages"] if p["id"] == "spp-client-core")
-        self.assertEqual(core["version"], "0.1.1-beta")
+        self.assertEqual(core["version"], "0.1.2-beta")
         for source in (
             ROOT / "packages/spp-client-core/spp_client_core.py",
             ROOT / "tools/build_local_release.py",
@@ -92,6 +92,22 @@ class ReleaseMetadataTests(unittest.TestCase):
                         for t in node.targets)
             ]
             self.assertEqual(versions, [core["version"]])
+
+    def test_round_one_and_two_use_identical_teasers_and_finals_are_longer(self):
+        manifest = json.loads((ROOT / "manifest.json").read_text(encoding="utf-8"))
+        package = next(p for p in manifest["packages"] if p["id"] == "spp-victory-audio")
+        self.assertEqual(package["version"], "0.1.1-beta")
+        archive_name = package["download_url"].rsplit("/", 1)[-1]
+        with zipfile.ZipFile(ROOT / "release" / archive_name) as archive:
+            catalog = json.loads(archive.read("catalog.json"))
+            for team in ("super", "pro"):
+                stages = catalog["tracks"][team]
+                first = archive.read(stages["1"]["path"])
+                self.assertEqual(first, archive.read(stages["2"]["path"]))
+                self.assertEqual(stages["1"]["duration"], stages["2"]["duration"])
+                self.assertTrue(9.0 <= stages["1"]["duration"] <= 11.0)
+                self.assertTrue(19.0 <= stages["3"]["duration"] <= 21.0)
+                self.assertNotEqual(first, archive.read(stages["3"]["path"]))
 
 
 if __name__ == "__main__":
