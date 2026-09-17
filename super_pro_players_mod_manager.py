@@ -1,6 +1,6 @@
 """SUPER PRO PLAYERS Mods Manager.
 
-Version: 0.1.1-beta
+Version: 0.1.2-beta
 
 This is the one downloadable bootstrap/core file for the SPP client mod
 manager.  BombSquad requires plugins to target one exact API version, so this
@@ -69,7 +69,7 @@ import zipfile
 
 
 MANAGER_NAME = "SUPER PRO PLAYERS Mods Manager"
-MANAGER_VERSION = "0.1.1-beta"
+MANAGER_VERSION = "0.1.2-beta"
 STATE_SCHEMA = 1
 MANIFEST_SCHEMA = 1
 LOADER_FILENAME = "spp_mod_manager_loader.py"
@@ -132,6 +132,9 @@ _CACHED_BUILD_NUMBER = None
 _CACHED_GAME_VERSION = None
 _STATE_LOAD_CAN_PRUNE = False
 _STATE_LOAD_ERROR = ""
+# AppTimer objects cancel themselves when their last Python reference is lost.
+# Keep fallback timers alive until their one-shot callbacks have run.
+_RETAINED_APP_TIMERS = []
 # Import only what exists on the running BombSquad generation.  Keeping these
 # imports optional also lets the non-UI/security portions be tested with normal
 # Python outside the game.
@@ -537,20 +540,49 @@ def _push_from_thread(call):
 
 
 def _app_timer(delay, call):
+    """Schedule a retained one-shot app timer across supported APIs."""
     if _base is None:
         return None
+    # This helper owns one-shot timers internally, so it cannot disappear
+    # during Android GC before update health is committed to disk.
     try:
-        return _base.AppTimer(delay, call)
+        return _base.apptimer(delay, call)
+    except Exception:
+        pass
+
+    def retained_timer(factory):
+        holder = [None]
+
+        def run_once():
+            try:
+                call()
+            finally:
+                timer = holder[0]
+                if timer is not None:
+                    try:
+                        _RETAINED_APP_TIMERS.remove(timer)
+                    except ValueError:
+                        pass
+                    holder[0] = None
+
+        timer = factory(run_once)
+        holder[0] = timer
+        if timer is not None:
+            _RETAINED_APP_TIMERS.append(timer)
+        return timer
+
+    try:
+        return retained_timer(lambda callback: _base.AppTimer(delay, callback))
     except Exception:
         try:
-            return _base.apptimer(delay, call)
-        except Exception:
-            try:
-                return _base.timer(
-                    delay, call, timetype=_base.TimeType.REAL
+            return retained_timer(
+                lambda callback: _base.timer(
+                    delay, callback, timetype=_base.TimeType.REAL
                 )
-            except Exception:
-                return None
+            )
+        except Exception:
+            _append_log("Unable to schedule app timer.")
+            return None
 
 
 def _loader_source(api_version):
