@@ -16,7 +16,7 @@ You do **not** need to download this file manually or search for BombSquad's mod
 5. Paste the complete command below and press **Exec**:
 
 ```python
-import urllib.request as u,hashlib as h;d=u.urlopen('https://raw.githubusercontent.com/master1591/super-pro-players-mods/17e78cf4a7eed991c8e1db4bed62abf62eea7920/install.py',timeout=20).read(131073);len(d)<=131072 or (_ for _ in ()).throw(RuntimeError('SPP installer is too large'));h.sha256(d).hexdigest()=='2b7a0c6f088426a1f9e2fbc47fc965f9051b6ab73543fcf1c4fed2f960570161' or (_ for _ in ()).throw(RuntimeError('SPP installer security check failed'));exec(compile(d,'spp_installer','exec'),{'__name__':'__main__'})
+import urllib.request as u,hashlib as h;d=u.urlopen('https://raw.githubusercontent.com/master1591/super-pro-players-mods/7cdab8770d9ef822a8d2ecc3f0e1d9634f854d00/install.py',timeout=20).read(131073);len(d)<=131072 or (_ for _ in ()).throw(RuntimeError('SPP installer is too large'));h.sha256(d).hexdigest()=='6372c6f5ad65099aa913fd810ce5a65658c21f3289988c6136f9f65a585e395c' or (_ for _ in ()).throw(RuntimeError('SPP installer security check failed'));exec(compile(d,'spp_installer','exec'),{'__name__':'__main__'})
 ```
 
 6. Wait for `Installed successfully. Fully restart BombSquad once.`
@@ -28,8 +28,8 @@ Use only the command in this repository or the official SUPER PRO PLAYERS Discor
 
 | File | Immutable commit | SHA-256 |
 |---|---|---|
-| `install.py` | `17e78cf4a7eed991c8e1db4bed62abf62eea7920` | `2b7a0c6f088426a1f9e2fbc47fc965f9051b6ab73543fcf1c4fed2f960570161` |
-| `super_pro_players_mod_manager.py` | `d72e128845f4275cfa6db458447c2f98b40cd8e4` | `c4260c88a298f26162a8721a6f60c1226d1be9508dbc161599482fee315480f8` |
+| `install.py` | `7cdab8770d9ef822a8d2ecc3f0e1d9634f854d00` | `6372c6f5ad65099aa913fd810ce5a65658c21f3289988c6136f9f65a585e395c` |
+| `super_pro_players_mod_manager.py` | `ff8639cebd191b28d21eb0420df00503395750df` | `c6e25aad390a99fe541f38dbc37443848c93fef9e5b06f839a45756af3606194` |
 
 ## Open the manager
 
@@ -94,8 +94,10 @@ Music volume and the victory-music toggle remain in the manager settings.
 Client core **0.1.2-beta** and audio **0.1.1-beta** align victory music with
 the score-screen reveals and keep the default soundtrack silent on SPP.
 Existing users only need **CHECK → INSTALL / UPDATE ALL**, confirm the code
-update if asked, and fully restart BombSquad. The manager itself remains
-0.1.1-beta. Both package versions above must be installed for the new cuts.
+update if asked, and fully restart BombSquad. Manager **0.1.2-beta** keeps its
+one-shot boot-health timer alive so a successful package update is not rolled
+back and offered repeatedly. Both package versions above must be installed for
+the new cuts.
 
 After joining the updated SPP server, look for **SPP music connected**. This
 means the server acknowledged this client's registration; it is not an audio
