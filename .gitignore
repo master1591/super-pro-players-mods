@@ -8,4 +8,7 @@ packages/spp-victory-audio/audio/*
 !packages/spp-victory-audio/audio/.gitkeep
 release/*
 !release/spp-client-core-0.1.0-beta.zip
+!release/spp-client-core-0.1.1-beta.zip
+!release/spp-client-core-0.1.2-beta.zip
 !release/spp-victory-audio-0.1.0-beta.zip
+!release/spp-victory-audio-0.1.1-beta.zip

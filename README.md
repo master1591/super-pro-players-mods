@@ -85,34 +85,44 @@ on Windows and Android. The manager itself continues to support APIs 6-9, but
 older APIs will show the victory packages as incompatible instead of forcing
 an unsafe installation.
 
-SUPER and PRO each have a 4-second cue for 1/3, a 7-second cue for 2/3, and an
-18-second final cue for 3/3. Music volume and the victory-music toggle remain
-available in the manager settings.
+SUPER and PRO each use the same approximately 10-second teaser for both 1/3
+and 2/3. At 3/3, the winning team's dance section plays for approximately
+20 seconds. Cues begin when the native score or final winner text is revealed;
+they stop when the score screen exits, even if a player continues early.
+Music volume and the victory-music toggle remain in the manager settings.
 
-Client core **0.1.1-beta** fixes server discovery and score-screen music timing.
+Client core **0.1.2-beta** and audio **0.1.1-beta** align victory music with
+the score-screen reveals and keep the default soundtrack silent on SPP.
 Existing users only need **CHECK → INSTALL / UPDATE ALL**, confirm the code
 update if asked, and fully restart BombSquad. The manager itself remains
-0.1.1-beta; the unchanged audio package remains 0.1.0-beta.
+0.1.1-beta. Both package versions above must be installed for the new cuts.
 
 After joining the updated SPP server, look for **SPP music connected**. This
 means the server acknowledged this client's registration; it is not an audio
 hardware test. Discovery no longer depends on the server's displayed name.
 Short discovery messages may appear in chat before registration. Only the six
-verified local clips can be selected by the server, and normal music resumes
-after the clip ends, music is disabled, or the client disconnects.
+verified local clips can be selected by the server. BombSquad's normal music
+stays silent throughout the recognized SPP connection, including gameplay,
+between clips, and when Victory music is switched off. Sound effects stay on.
+Normal music and its saved volume preference return after leaving the server.
+
+Windows prepares a bounded set of silent audio decoders on a dedicated worker
+thread, so loading a clip does not block BombSquad's game thread. Timers follow
+actual playback start, and stopped or obsolete requests cannot play later.
+Android retains the game's built-in asynchronous OS music bridge.
 
 The Windows and Android playback paths are covered by isolated tests, but
 actual speaker output must still be checked on both devices after updating.
 
 ### Installed but victory music is silent
 
-1. Confirm the manager lists `spp-client-core: 0.1.1-beta` and
-   `spp-victory-audio: 0.1.0-beta`, with Victory music enabled and volume above zero.
+1. Confirm the manager lists `spp-client-core: 0.1.2-beta` and
+   `spp-victory-audio: 0.1.1-beta`, with Victory music enabled and volume above zero.
 2. Fully close and reopen BombSquad, then rejoin SPP and wait for
    **SPP music connected**. If it never appears, reconnect once and send staff
    the developer-console lines beginning `[SPP Client]`.
 3. The server owner should confirm a successful Witchly upload before restarting,
-   then look for `SUPER PRO READY version=2026.09.16.3`. Registration and round
+   then look for `SUPER PRO READY version=2026.09.17.1`. Registration and round
    event diagnostics begin `SUPER PRO MUSIC`.
 4. If connected but silent, report which device, team and round (1/3, 2/3, 3/3)
    failed, plus any playback warning. Do not reinstall unrelated mods or delete

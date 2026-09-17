@@ -16,7 +16,7 @@ from .playback import PlaybackError, create_player
 from .protocol import build_hello, parse_chat_message, parse_control_message
 
 
-CORE_VERSION = "0.1.1-beta"
+CORE_VERSION = "0.1.2-beta"
 AUDIO_PACKAGE_ID = "spp-victory-audio"
 CATALOG_FILENAME = "catalog.json"
 POLL_SECONDS = 0.20
@@ -25,7 +25,7 @@ MAX_SEEN_EVENTS = 256
 MIN_EVENT_GAP_SECONDS = 1.0
 HELLO_REFRESH_SECONDS = 45.0
 HELLO_RETRY_SECONDS = 6.0
-HELLO_FAST_ATTEMPTS = 3
+HELLO_FAST_ATTEMPTS = 10
 HELLO_TIMEOUT_SECONDS = 18.0
 PUBLIC_PARTY_NAME = "🥊super pro players🥊"
 
@@ -189,6 +189,9 @@ class ClientRuntime(object):
         self._stop_timer = None
         self._play_token = 0
         self._playing = False
+        self._backend_token = None
+        self._pending_duration = None
+        self._active_event_key = None
         self._last_volume = None
         self._last_event_time = -1000.0
         self._last_hello_time = -1000.0
@@ -218,6 +221,8 @@ class ClientRuntime(object):
         self._poll_timer = _make_timer(
             self._base, POLL_SECONDS, self._poll, repeat=True
         )
+        if self._is_spp_music_scope():
+            self._silence_game_music()
         self._send_hello(force=True)
         print(
             "[SPP Client] core %s ready on %s"
@@ -260,6 +265,10 @@ class ClientRuntime(object):
             self._discovered_nonce is not None
             or self._connection_name.casefold() == PUBLIC_PARTY_NAME.casefold()
         )
+
+    def _is_spp_music_scope(self):
+        """Recognize where to mute; this never authorizes a playback event."""
+        return self._is_spp_connection() or self._can_send_hello()
 
     def _send_hello(self, force=False):
         if (
@@ -305,6 +314,17 @@ class ClientRuntime(object):
     def _handle_control(self, frame):
         if self._connection == "disconnected":
             return
+        if frame["kind"] == "stop":
+            if (
+                self._is_spp_connection()
+                and frame.get("client_nonce") == self._client_nonce
+                and frame.get("session_nonce") == self._server_nonce
+                and self._active_event_key == (
+                    frame.get("session_nonce"), frame.get("event_id")
+                )
+            ):
+                self.stop_playback()
+            return
         if frame["kind"] == "discover":
             nonce = frame["session_nonce"]
             if nonce != self._discovered_nonce:
@@ -315,6 +335,7 @@ class ClientRuntime(object):
                     self._hello_attempts = 0
                     self._first_hello_time = None
             # Respect the retry cadence even if repeated beacons arrive.
+            self._silence_game_music()
             self._send_hello()
             return
         if (
@@ -329,6 +350,7 @@ class ClientRuntime(object):
         ):
             return
         self._server_nonce = frame["session_nonce"]
+        self._silence_game_music()
         if not self._connected_notice:
             self._connected_notice = True
             _screenmessage(self._base, "SPP music connected", color=(0.3, 1.0, 0.4))
@@ -345,6 +367,9 @@ class ClientRuntime(object):
         try:
             self._catalog = _load_catalog(package_path)
             self._catalog_path = package_path
+            prepare = getattr(self._player, "prepare", None)
+            if prepare is not None:
+                prepare([cue["path"] for cue in self._catalog.values()])
             return True
         except Exception as exc:
             self._catalog = None
@@ -362,12 +387,14 @@ class ClientRuntime(object):
         return True
 
     def _silence_game_music(self):
-        """Hold scene music only for the lifetime of this local victory cue.
+        """Hold BombSquad's soundtrack throughout a recognized SPP connection.
 
-        Score screens can request their soundtrack after our network event.
-        Preserve those requests, but defer the actual playback until the cue
-        ends. This instance-only hook is removed on every teardown path.
+        Preserve scene/mode requests for leaving the server, including the
+        menu request that may arrive just before disconnect detection. No
+        global setting or sound-effects volume is changed.
         """
+        if self._music_restore is not None:
+            return
         self._music_restore = None
         self._music_guard = None
         try:
@@ -388,6 +415,8 @@ class ClientRuntime(object):
             except TypeError:
                 original(None)
             self._music_restore = (music, mode, current, original_volume)
+            # Stopping native output must not erase the desired soundtrack.
+            music.music_types[mode] = current
             instance_values = getattr(music, "__dict__", {})
             guard = {
                 "active": True,
@@ -395,12 +424,15 @@ class ClientRuntime(object):
                 "had_instance": "do_play_music" in instance_values,
                 "instance_value": instance_values.get("do_play_music"),
                 "pending": {},
+                "volume_original": getattr(music, "music_volume_changed", None),
+                "volume_had_instance": "music_volume_changed" in instance_values,
+                "volume_instance_value": instance_values.get("music_volume_changed"),
             }
 
             def defer_music(*args, **kwargs):
                 if not guard["active"]:
                     # Another mod may retain this function inside its own
-                    # wrapper. Once our cue ends, that chain must pass through
+                    # wrapper. Once we leave, that chain must pass through
                     # even when we no longer own the instance method slot.
                     return guard["original"](*args, **kwargs)
                 # Keep desired music_types state accurate, including requests
@@ -422,8 +454,18 @@ class ClientRuntime(object):
             guard["wrapper"] = defer_music
             music.do_play_music = defer_music
             self._music_guard = guard
+            if guard["volume_original"] is not None:
+                def defer_volume(*args, **kwargs):
+                    if not guard["active"]:
+                        return guard["volume_original"](*args, **kwargs)
+                    # On Android this callback otherwise changes the shared
+                    # OS player underneath the mod's independent volume knob.
+                    # BombSquad keeps its new preference in app.config itself.
+                    return None
+                guard["volume_wrapper"] = defer_volume
+                music.music_volume_changed = defer_volume
         except Exception:
-            pass
+            self._warn_once("music-guard", "original music could not be muted.")
 
     def _restore_game_music(self):
         state = self._music_restore
@@ -436,6 +478,15 @@ class ClientRuntime(object):
             return
         music, mode, previous, original_volume = state
         if guard is not None:
+            if (
+                guard.get("volume_wrapper") is not None
+                and getattr(music, "music_volume_changed", None)
+                is guard["volume_wrapper"]
+            ):
+                if guard["volume_had_instance"]:
+                    music.music_volume_changed = guard["volume_instance_value"]
+                else:
+                    delattr(music, "music_volume_changed")
             if getattr(music, "do_play_music", None) is not guard["wrapper"]:
                 # Another mod now owns the method/audio slot. Do not replace
                 # its hook or restart our older soundtrack over its work.
@@ -444,6 +495,13 @@ class ClientRuntime(object):
                 music.do_play_music = guard["instance_value"]
             else:
                 delattr(music, "do_play_music")
+            if guard.get("volume_original") is not None:
+                try:
+                    guard["volume_original"](
+                        float(self._base.app.config.get("Music Volume", original_volume))
+                    )
+                except Exception:
+                    pass
             if self._platform == "android":
                 try:
                     self._base.music_player_set_volume(
@@ -528,31 +586,52 @@ class ClientRuntime(object):
         self.stop_playback()
         self._silence_game_music()
         try:
-            self._player.play(cue["path"], volume)
+            backend_token = self._player.play(cue["path"], volume)
         except Exception as exc:
-            self._restore_game_music()
             self._warn_once("playback", "could not play victory music: %s" % exc)
             return
         self._last_event_time = now
         self._last_volume = volume
         self._playing = True
+        self._active_event_key = event_key
         print(
             "[SPP Client] playing %s victory cue %d/3 on %s"
             % (event["team"], event["stage"], self._platform)
         )
         self._play_token += 1
         token = self._play_token
+        if backend_token is not None and hasattr(self._player, "poll_events"):
+            self._backend_token = backend_token
+            self._pending_duration = cue["duration"]
+        else:
+            self._start_stop_timer(token, cue["duration"])
+
+    def _start_stop_timer(self, token, duration):
         try:
             self._stop_timer = _make_timer(
                 self._base,
-                cue["duration"] + 0.15,
+                max(0.01, duration + 0.15),
                 lambda: self._stop_if_current(token),
             )
         except Exception:
-            # Never leave a scene-music hook or an unbounded MP3 running if a
-            # different BombSquad build rejects the timer API.
             self.stop_playback()
             self._warn_once("cue-timer", "victory music timer is unavailable.")
+
+    def _poll_player(self):
+        poll_events = getattr(self._player, "poll_events", None)
+        if poll_events is None:
+            return
+        for kind, token, detail in poll_events():
+            if token != self._backend_token or not self._playing:
+                continue
+            if kind == "error":
+                self.stop_playback()
+                self._warn_once("playback", "could not play victory music: %s" % detail)
+            elif kind == "started" and self._pending_duration is not None:
+                duration = self._pending_duration
+                self._pending_duration = None
+                elapsed = max(0.0, time.monotonic() - detail)
+                self._start_stop_timer(self._play_token, duration - elapsed)
 
     def _stop_if_current(self, token):
         if token == self._play_token:
@@ -561,6 +640,9 @@ class ClientRuntime(object):
     def stop_playback(self):
         self._play_token += 1
         self._stop_timer = None
+        self._backend_token = None
+        self._pending_duration = None
+        self._active_event_key = None
         stop_owned_audio = True
         if self._platform == "android" and self._music_restore is not None:
             # Android victory cues share Ballistica's OS music player. If a
@@ -586,11 +668,16 @@ class ClientRuntime(object):
             except Exception:
                 pass
         self._playing = False
-        self._restore_game_music()
+        if not self._active or not self._is_spp_music_scope():
+            self._restore_game_music()
 
     def shutdown(self):
         self._active = False
         self.stop_playback()
+        self._restore_game_music()
+        shutdown_player = getattr(self._player, "shutdown", None)
+        if shutdown_player is not None:
+            shutdown_player()
         self._poll_timer = None
 
     def _poll(self):
@@ -610,6 +697,7 @@ class ClientRuntime(object):
         current = self._chat_messages()
         if connection != self._connection:
             self.stop_playback()
+            self._restore_game_music()
             self._connection = connection
             self._connection_name = connection_name
             self._client_nonce = uuid.uuid4().hex[:16]
@@ -624,10 +712,14 @@ class ClientRuntime(object):
             self._messages = current
             self._seen_events.clear()
             self._seen_order.clear()
+            if self._is_spp_music_scope():
+                self._silence_game_music()
             self._send_hello(force=True)
             return
 
         self._connection_name = connection_name
+        if self._is_spp_music_scope():
+            self._silence_game_music()
         self._send_hello()
 
         additions = _new_messages(self._messages, current)
@@ -642,6 +734,7 @@ class ClientRuntime(object):
             event = parse_chat_message(message)
             if enabled and self._is_spp_connection() and event is not None:
                 self._play_event(event, volume)
+        self._poll_player()
 
 
 def shutdown():

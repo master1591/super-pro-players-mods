@@ -19,8 +19,8 @@ DOWNLOAD_ROOT = (
     "super-pro-players-mods/main/release"
 )
 ZIP_TIMESTAMP = (2020, 1, 1, 0, 0, 0)
-CORE_VERSION = "0.1.1-beta"
-AUDIO_VERSION = "0.1.0-beta"
+CORE_VERSION = "0.1.2-beta"
+AUDIO_VERSION = "0.1.1-beta"
 
 
 def digest(data: bytes) -> str:
@@ -161,7 +161,7 @@ def build(output: Path, sequence: int) -> Path:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
-    parser.add_argument("--sequence", type=int, default=3)
+    parser.add_argument("--sequence", type=int, default=4)
     args = parser.parse_args()
     if args.sequence < 1:
         parser.error("--sequence must be positive")

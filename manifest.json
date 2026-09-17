@@ -1,42 +1,42 @@
 {
   "schema": 1,
-  "release_sequence": 3,
+  "release_sequence": 4,
   "channel": "stable",
   "title": "SUPER PRO PLAYERS official packages",
   "packages": [
     {
       "id": "spp-client-core",
       "name": "SPP Client Core",
-      "version": "0.1.1-beta",
+      "version": "0.1.2-beta",
       "api_versions": [
         9
       ],
       "minimum_build": 22796,
       "maximum_build": null,
-      "download_url": "https://raw.githubusercontent.com/master1591/super-pro-players-mods/main/release/spp-client-core-0.1.1-beta.zip",
-      "download_size": 9897,
-      "unpacked_size": 34010,
-      "archive_sha256": "3d357eeba51b7412fc0068b88ef7a07777c324c1054ca81c82507314bbac9aba",
+      "download_url": "https://raw.githubusercontent.com/master1591/super-pro-players-mods/main/release/spp-client-core-0.1.2-beta.zip",
+      "download_size": 12645,
+      "unpacked_size": 47322,
+      "archive_sha256": "02bd8713615904a35ceef778d9021486a525a95a0ab80756b2e8b59138bbfcea",
       "files": [
         {
           "path": "README.md",
-          "size": 716,
-          "sha256": "377a2d6c833288a41e022515f6f57fbc2bc6ba889873e8c3fb89ea7e55a9979a"
+          "size": 1284,
+          "sha256": "e20985793f2bf48d949377a2b7534853d5479adb867efb8ec86da4fd32c206d6"
         },
         {
           "path": "playback.py",
-          "size": 4436,
-          "sha256": "eb262f180298e9cb4a500adf881ff73c6f4e441150c30c4f572df2309cf332a5"
+          "size": 12468,
+          "sha256": "b25b683706eee66dde2a9af03b5478e62d103f4b1b8faa2c907b10c2e1e5028a"
         },
         {
           "path": "protocol.py",
-          "size": 3995,
-          "sha256": "bdcde5094959b52f65dfeb8ce74f88db1b9e1e3c555e3f09cc4f2c70d808c46a"
+          "size": 4353,
+          "sha256": "1fd334e56dbd215b4e6284c6e7c657df93ac6910465a04829d87179ba83fbd7a"
         },
         {
           "path": "spp_client_core.py",
-          "size": 24863,
-          "sha256": "3b5486bb80f7ba2ec92b619836e675075ca6ae379874e6e3d18b82113bbb30ea"
+          "size": 29217,
+          "sha256": "d043e66423a80392a0ce0611e8f93c584ef5dd155420eed86dc1a0d401792a65"
         }
       ],
       "entrypoint": "spp_client_core.py",
@@ -47,51 +47,51 @@
     {
       "id": "spp-victory-audio",
       "name": "SPP Victory Audio",
-      "version": "0.1.0-beta",
+      "version": "0.1.1-beta",
       "api_versions": [
         9
       ],
       "minimum_build": 22796,
       "maximum_build": null,
-      "download_url": "https://raw.githubusercontent.com/master1591/super-pro-players-mods/main/release/spp-victory-audio-0.1.0-beta.zip",
-      "download_size": 1403093,
-      "unpacked_size": 1402580,
-      "archive_sha256": "0ec1194e4e704bfefcc9f71d17b144a64cffc6b7f9ad1dda29cb3144557037e2",
+      "download_url": "https://raw.githubusercontent.com/master1591/super-pro-players-mods/main/release/spp-victory-audio-0.1.1-beta.zip",
+      "download_size": 1962338,
+      "unpacked_size": 1961826,
+      "archive_sha256": "faaf40f053ae84676ff1bac92b65d937fae02586e334990c09c83d45e345e058",
       "files": [
         {
           "path": "audio/pro_round_1.mp3",
-          "size": 97846,
-          "sha256": "451204163f9d197e33c6693e1c4fe138efc3a1748d0a003dd154acd88f17c415"
+          "size": 251446,
+          "sha256": "79740b7cce6d8c6d9a5e5795f44939ede035738c8a9ab78d65d26323afc95ff9"
         },
         {
           "path": "audio/pro_round_2.mp3",
-          "size": 169317,
-          "sha256": "4a8f4d84e5e9d40ebacee9a457161f83ce94e041fec3ae1874032bead7b485ea"
+          "size": 251446,
+          "sha256": "79740b7cce6d8c6d9a5e5795f44939ede035738c8a9ab78d65d26323afc95ff9"
         },
         {
           "path": "audio/pro_round_3.mp3",
-          "size": 433885,
-          "sha256": "2e4014a7979c617ff8ca62bfea3f3d34466f29d032555cf7512284bca014aa64"
+          "size": 493444,
+          "sha256": "24a1fa57376e1fa294341001c007bf47f0b6a088aa7ae04212a17944d034a1e3"
         },
         {
           "path": "audio/super_round_1.mp3",
-          "size": 97846,
-          "sha256": "7b72bc7a26b2c4d8e5122c20adb21e87e3bf3b853851a4acf4cd0480b0d13489"
+          "size": 242042,
+          "sha256": "83ea9bc5f371aaa0f2e689c6b090ae4b3a595ffecb7455351b0f72ff77b541e6"
         },
         {
           "path": "audio/super_round_2.mp3",
-          "size": 169317,
-          "sha256": "601fd1091d1cfab77a9995512b18d17a1ef5e8ffe8b511b4bc0dc3c65b63faa7"
+          "size": 242042,
+          "sha256": "83ea9bc5f371aaa0f2e689c6b090ae4b3a595ffecb7455351b0f72ff77b541e6"
         },
         {
           "path": "audio/super_round_3.mp3",
-          "size": 433885,
-          "sha256": "40d54624f2b4d5e90fe58e6d808f61652977f9ee63fa60f9f085662b4b52920e"
+          "size": 480906,
+          "sha256": "1cb1d81a737d54b306b1a38a271984885281c5ab939d5dcc862dc3fdc52e24a8"
         },
         {
           "path": "catalog.json",
-          "size": 484,
-          "sha256": "1b65cfedb7daee5c82b11dc254ec42debcf246f50571fd6022e49b9526a874bd"
+          "size": 500,
+          "sha256": "7b5b7577a2d9ee4c72800e34893783cdc75ed870c02d8cf649cba9f57a1b8e9c"
         }
       ],
       "entrypoint": null,

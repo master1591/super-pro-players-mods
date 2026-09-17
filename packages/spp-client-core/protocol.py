@@ -31,10 +31,14 @@ _READY_RE = re.compile(
     r"^SPP MUSIC: SPP1\|READY\|([0-9a-f]{12})\|([0-9a-f]{16})$",
     re.ASCII,
 )
+_STOP_RE = re.compile(
+    r"^SPP MUSIC: SPP1\|STOP\|([0-9a-f]{12})\|([0-9a-f]{16})\|([0-9a-f]{12})$",
+    re.ASCII,
+)
 
 
 def parse_control_message(message):
-    """Parse discovery/registration frames, never arbitrary chat commands.
+    """Parse fixed discovery, registration and cue-stop frames.
 
     These fixed frames identify a cooperating host, not a cryptographically
     trusted identity. The runtime additionally requires a live connection,
@@ -51,6 +55,14 @@ def parse_control_message(message):
             "kind": "ready",
             "session_nonce": match.group(1),
             "client_nonce": match.group(2),
+        }
+    match = _STOP_RE.fullmatch(message)
+    if match is not None:
+        return {
+            "kind": "stop",
+            "session_nonce": match.group(1),
+            "client_nonce": match.group(2),
+            "event_id": match.group(3),
         }
     return None
 

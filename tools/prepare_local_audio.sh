@@ -40,12 +40,15 @@ make_clip() {
     "$output_file"
 }
 
-make_clip "$super_source" 6.980 4.000 -18 3.750 0.250 "$output_dir/super_round_1.mp3"
-make_clip "$super_source" 13.550 7.000 -16 6.650 0.350 "$output_dir/super_round_2.mp3"
-make_clip "$super_source" 21.805 18.000 -14 17.400 0.600 "$output_dir/super_round_3.mp3"
+# Each team's first two wins use the exact same four-bar teaser, including
+# level and fade. The final starts on the strong dance-section onset rather
+# than consuming the drop over the score screen's introductory animation.
+make_clip "$super_source" 6.959 10.031 -16 9.681 0.350 "$output_dir/super_round_1.mp3"
+cp "$output_dir/super_round_1.mp3" "$output_dir/super_round_2.mp3"
+make_clip "$super_source" 23.050 19.980 -14 19.380 0.600 "$output_dir/super_round_3.mp3"
 
-make_clip "$pro_source" 2.000 4.000 -18 3.750 0.250 "$output_dir/pro_round_1.mp3"
-make_clip "$pro_source" 9.700 7.000 -16 6.650 0.350 "$output_dir/pro_round_2.mp3"
-make_clip "$pro_source" 61.930 18.000 -14 17.400 0.600 "$output_dir/pro_round_3.mp3"
+make_clip "$pro_source" 9.676 10.403 -16 10.053 0.350 "$output_dir/pro_round_1.mp3"
+cp "$output_dir/pro_round_1.mp3" "$output_dir/pro_round_2.mp3"
+make_clip "$pro_source" 61.898 20.504 -14 19.904 0.600 "$output_dir/pro_round_3.mp3"
 
 echo "Prepared six SPP release cues in $output_dir"

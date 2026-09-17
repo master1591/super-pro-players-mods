@@ -46,6 +46,21 @@ CORE = MODULES["spp_client_core"]
 
 
 class ProtocolTests(unittest.TestCase):
+    def test_stop_is_strictly_bound_to_session_client_and_event(self):
+        valid = "SPP MUSIC: SPP1|STOP|012345abcdef|0123456789abcdef|abcdef012345"
+        self.assertEqual(PROTOCOL.parse_control_message(valid), {
+            "kind": "stop", "session_nonce": "012345abcdef",
+            "client_nonce": "0123456789abcdef", "event_id": "abcdef012345",
+        })
+        for message in (
+            "Player: " + valid, valid + "\n", valid + " extra",
+            valid.replace("SPP MUSIC:", "Player:"),
+            valid.replace("abcdef012345", "../file.mp3"),
+            valid.replace("0123456789abcdef", "short"),
+            valid.replace("012345abcdef", "ABCDEF012345"),
+        ):
+            self.assertIsNone(PROTOCOL.parse_control_message(message))
+
     def test_strict_discovery_and_ready_frames(self):
         self.assertEqual(
             PROTOCOL.parse_control_message("SPP MUSIC: SPP1|DISCOVER|012345abcdef"),
@@ -475,6 +490,8 @@ class RuntimeTests(unittest.TestCase):
             settings["enabled"] = False
             runtime._poll()
             self.assertIn(("stop",), played)
+            self.assertEqual(music.calls, [None])
+            runtime.shutdown()
             self.assertEqual(music.calls, [None, "Scores"])
 
     def test_events_are_ignored_on_another_server(self):
@@ -667,15 +684,15 @@ class HandshakeRuntimeTests(unittest.TestCase):
 
     def test_timeout_warns_once_and_slows_retry_cadence(self):
         self.add("SPP MUSIC: SPP1|DISCOVER|012345abcdef")
-        for delta in (6, 6, 6, 6):
+        for delta in (6,) * 10:
             self.now += delta
             self.runtime._poll()
-        self.assertEqual(len(self.outgoing), 3)
+        self.assertEqual(len(self.outgoing), 10)
         self.assertEqual(len(self.notices), 1)
         self.assertIn("waiting for server confirmation", self.notices[0])
-        self.now += 33
+        self.now += 39
         self.runtime._poll()
-        self.assertEqual(len(self.outgoing), 4)
+        self.assertEqual(len(self.outgoing), 11)
 
     def test_wrong_nonce_session_duplicate_and_stale_frames_do_not_play(self):
         self.add("SPP MUSIC: SPP1|DISCOVER|012345abcdef")
@@ -713,7 +730,7 @@ class HandshakeRuntimeTests(unittest.TestCase):
         self.event(client_nonce=old_nonce, event_id="abcdef012349")
         self.assertEqual(len([row for row in self.audio if row[0] == "play"]), 1)
 
-    def test_scene_music_is_deferred_for_cue_then_latest_request_restored(self):
+    def test_scene_music_is_deferred_for_session_then_latest_request_restored(self):
         for platform in ("windows", "android"):
             with self.subTest(platform=platform):
                 self.runtime._platform = platform
@@ -727,10 +744,16 @@ class HandshakeRuntimeTests(unittest.TestCase):
                 self.assertEqual(len(self.music.calls), calls_before)
                 self.assertTrue(self.runtime._playing)
                 self.runtime.stop_playback()
+                self.assertEqual(len(self.music.calls), calls_before)
+                self.assertIn("do_play_music", self.music.__dict__)
+                self.host = None
+                self.runtime._poll()
                 self.assertEqual(self.music.calls[-1], (
                     "Next Activity", False, self.mode.REGULAR, {"custom": "keep"}
                 ))
                 self.assertNotIn("do_play_music", self.music.__dict__)
+                self.host = {"name": "Old Witchly Name", "port": 43210}
+                self.runtime._poll()
 
     def test_deferred_music_preserves_other_modes_and_positional_arguments(self):
         self.connect()
@@ -738,6 +761,8 @@ class HandshakeRuntimeTests(unittest.TestCase):
         self.music.do_play_music("Next regular", True, self.mode.REGULAR, {"a": 1})
         self.music.do_play_music("Test track", mode=self.mode.TEST)
         self.runtime.stop_playback()
+        self.assertEqual(self.music.calls[-1][0], None)
+        self.runtime.shutdown()
         self.assertEqual(self.music.calls[-1], (
             "Next regular", False, self.mode.REGULAR, {"a": 1}
         ))
@@ -750,22 +775,24 @@ class HandshakeRuntimeTests(unittest.TestCase):
         self.music._music_mode = self.mode.TEST
         self.music.do_play_music("Test track", mode=self.mode.TEST)
         self.runtime.stop_playback()
+        self.assertEqual(self.music.calls[-1][0], None)
+        self.runtime.shutdown()
         self.assertEqual(self.music.calls[-1][0], "Test track")
         self.assertIs(self.music.calls[-1][2], self.mode.TEST)
         self.assertEqual(self.music.music_types[self.mode.REGULAR], "Next regular")
 
-    def test_timer_failure_and_normal_duration_both_release_music_guard(self):
+    def test_timer_failure_and_normal_duration_keep_session_music_guard(self):
         self.connect()
         self.event(stage=3)
         self.assertEqual(self.timers[-1].delay, 18.15)
         self.timers[-1].callback()
         self.assertFalse(self.runtime._playing)
-        self.assertNotIn("do_play_music", self.music.__dict__)
+        self.assertIn("do_play_music", self.music.__dict__)
         self.now += 2
         with mock.patch.object(CORE, "_make_timer", side_effect=RuntimeError("timer failure")):
             self.event(event_id="abcdef012349")
         self.assertFalse(self.runtime._playing)
-        self.assertNotIn("do_play_music", self.music.__dict__)
+        self.assertIn("do_play_music", self.music.__dict__)
         self.assertIn(("stop",), self.audio)
         self.assertTrue(any("timer is unavailable" in message for message in self.notices))
 
@@ -780,25 +807,23 @@ class HandshakeRuntimeTests(unittest.TestCase):
         external_hook.assert_not_called()
         self.assertNotIn(("stop",), self.audio)
 
-    def test_captured_guard_becomes_passthrough_after_stop_or_shutdown(self):
-        for finish in (self.runtime.stop_playback, self.runtime.shutdown):
-            with self.subTest(finish=finish.__name__):
-                self.connect()
-                self.now += 2
-                self.event(event_id="00000000000" + ("1" if finish.__name__ == "stop_playback" else "2"))
-                captured = self.music.do_play_music
-                def wrap(previous):
-                    def newer(*args, **kwargs):
-                        return previous(*args, **kwargs)
-                    return newer
-                newer_wrapper = wrap(captured)
-                self.music.do_play_music = newer_wrapper
-                finish()
-                self.music.do_play_music("After cue", continuous=True)
-                self.assertEqual(self.music.calls[-1][0:2], ("After cue", True))
-                self.assertIs(self.music.do_play_music, newer_wrapper)
+    def test_captured_guard_holds_after_cue_and_passes_through_after_shutdown(self):
+        self.connect()
+        self.event()
+        captured = self.music.do_play_music
+        def newer_wrapper(*args, **kwargs):
+            return captured(*args, **kwargs)
+        self.music.do_play_music = newer_wrapper
+        self.runtime.stop_playback()
+        before = len(self.music.calls)
+        self.music.do_play_music("After cue", continuous=True)
+        self.assertEqual(len(self.music.calls), before)
+        self.runtime.shutdown()
+        self.music.do_play_music("After leaving", continuous=True)
+        self.assertEqual(self.music.calls[-1][0:2], ("After leaving", True))
+        self.assertIs(self.music.do_play_music, newer_wrapper)
 
-    def test_captured_guard_becomes_passthrough_after_playback_failure(self):
+    def test_playback_failure_keeps_captured_guard_until_leaving_server(self):
         self.connect()
         captured = []
         def fail_playback(_path, _volume):
@@ -812,24 +837,31 @@ class HandshakeRuntimeTests(unittest.TestCase):
         self.event()
         self.assertFalse(self.runtime._playing)
         self.music.do_play_music("After failure")
-        self.assertEqual(self.music.calls[-1][0], "After failure")
+        self.assertEqual(self.music.calls[-1][0], None)
         self.assertIs(self.music.do_play_music, captured[0])
+        self.runtime.shutdown()
+        self.music.do_play_music("After leaving")
+        self.assertEqual(self.music.calls[-1][0], "After leaving")
 
-    def test_playback_error_restores_music_and_removes_guard(self):
+    def test_playback_error_keeps_original_music_silent_until_disconnect(self):
         self.connect()
         self.runtime._player.play = mock.Mock(side_effect=RuntimeError("test failure"))
         self.event()
         self.assertFalse(self.runtime._playing)
+        self.assertIn("do_play_music", self.music.__dict__)
+        self.assertEqual(self.music.calls[-1][0], None)
+        self.assertTrue(any("could not play" in message for message in self.notices))
+        self.host = None
+        self.runtime._poll()
         self.assertNotIn("do_play_music", self.music.__dict__)
         self.assertEqual(self.music.calls[-1][0], "Scores")
-        self.assertTrue(any("could not play" in message for message in self.notices))
 
-    def test_disabled_music_and_shutdown_remove_guard(self):
+    def test_disabled_victory_music_keeps_guard_until_shutdown(self):
         self.connect()
         self.event()
         self.settings["enabled"] = False
         self.runtime._poll()
-        self.assertNotIn("do_play_music", self.music.__dict__)
+        self.assertIn("do_play_music", self.music.__dict__)
         self.assertFalse(self.runtime._playing)
         self.settings["enabled"] = True
         self.now += 2
