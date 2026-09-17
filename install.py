@@ -19,16 +19,16 @@ import urllib.parse
 import urllib.request
 
 
-INSTALLER_VERSION = "0.1.1-beta"
+INSTALLER_VERSION = "0.1.2-beta"
 MANAGER_FILENAME = "super_pro_players_mod_manager.py"
 MANAGER_MODULE = "super_pro_players_mod_manager"
 MANAGER_URL = (
     "https://raw.githubusercontent.com/master1591/"
-    "super-pro-players-mods/d72e128845f4275cfa6db458447c2f98b40cd8e4/"
+    "super-pro-players-mods/ff8639cebd191b28d21eb0420df00503395750df/"
     "super_pro_players_mod_manager.py"
 )
 MANAGER_SHA256 = (
-    "c4260c88a298f26162a8721a6f60c1226d1be9508dbc161599482fee315480f8"
+    "c6e25aad390a99fe541f38dbc37443848c93fef9e5b06f839a45756af3606194"
 )
 MAX_MANAGER_BYTES = 2 * 1024 * 1024
 NETWORK_TIMEOUT_SECONDS = 20

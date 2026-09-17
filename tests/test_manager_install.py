@@ -109,5 +109,103 @@ class ManagerInstallTests(unittest.TestCase):
             self.assertEqual(config.commits, 0)
 
 
+    def test_one_shot_app_timer_survives_without_python_reference(self):
+        manager = _load_manager(SOURCE)
+        scheduled = []
+        called = []
+
+        def apptimer(delay, call):
+            scheduled.append((delay, call))
+
+        manager._base = types.SimpleNamespace(apptimer=apptimer)
+        manager._app_timer(2.0, lambda: called.append("healthy"))
+        self.assertEqual(len(scheduled), 1)
+        self.assertEqual(scheduled[0][0], 2.0)
+        scheduled[0][1]()
+        self.assertEqual(called, ["healthy"])
+
+    def test_app_timer_fallback_is_retained_until_callback(self):
+        manager = _load_manager(SOURCE)
+        called = []
+
+        class Timer:
+            def __init__(self, delay, call):
+                self.delay = delay
+                self.call = call
+
+        def unavailable(*_args, **_kwargs):
+            raise AttributeError("one-shot helper unavailable")
+
+        manager._base = types.SimpleNamespace(
+            apptimer=unavailable,
+            AppTimer=Timer,
+        )
+        timer = manager._app_timer(2.0, lambda: called.append("healthy"))
+        self.assertIn(timer, manager._RETAINED_APP_TIMERS)
+        timer.call()
+        self.assertEqual(called, ["healthy"])
+        self.assertNotIn(timer, manager._RETAINED_APP_TIMERS)
+
+
+    def test_legacy_timer_fallback_releases_after_callback_error(self):
+        manager = _load_manager(SOURCE)
+
+        class Timer:
+            def __init__(self, delay, call, timetype=None):
+                self.delay = delay
+                self.call = call
+                self.timetype = timetype
+
+        def unavailable(*_args, **_kwargs):
+            raise AttributeError("timer helper unavailable")
+
+        def fail():
+            raise RuntimeError("test callback failure")
+
+        manager._base = types.SimpleNamespace(
+            apptimer=unavailable,
+            AppTimer=unavailable,
+            timer=Timer,
+            TimeType=types.SimpleNamespace(REAL="real"),
+        )
+        timer = manager._app_timer(2.0, fail)
+        self.assertIn(timer, manager._RETAINED_APP_TIMERS)
+        with self.assertRaisesRegex(RuntimeError, "test callback failure"):
+            timer.call()
+        self.assertNotIn(timer, manager._RETAINED_APP_TIMERS)
+
+    def test_confirmed_update_stays_active_after_next_state_load(self):
+        manager = _load_manager(SOURCE)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            manager._CACHED_PATHS = {
+                "root": str(root),
+                "state": str(root / "state.json"),
+                "cache": str(root / "manifest-cache.json"),
+                "staging": str(root / "staging"),
+                "releases": str(root / "releases"),
+                "logs": str(root / "manager.log"),
+            }
+            service = manager._ManagerService()
+            service.state = manager._default_state()
+            service.state["pending"] = {
+                "previous_active": {},
+                "new_active": {},
+                "previous_repair_needed": [],
+                "new_repair_needed": [],
+                "fallback_active": {},
+                "fallback_repair_needed": [],
+                "boot_attempted": False,
+                "clear_prune_on_healthy": False,
+                "activated_at": 1,
+                "attempt_time": 0,
+            }
+            service._process_pending_boot()
+            self.assertTrue(service.state["pending"]["boot_attempted"])
+            service._mark_pending_healthy()
+            self.assertIsNone(service.state["pending"])
+            self.assertIsNone(manager._load_state()["pending"])
+
+
 if __name__ == "__main__":
     unittest.main()
