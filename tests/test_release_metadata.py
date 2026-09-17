@@ -2,10 +2,12 @@
 
 import ast
 import hashlib
+import io
 import json
 from pathlib import Path
 import re
 import unittest
+from unittest import mock
 import zipfile
 
 
@@ -35,7 +37,42 @@ class ReleaseMetadataTests(unittest.TestCase):
         installer = (ROOT / "install.py").read_bytes()
         self.assertEqual(hashlib.sha256(installer).hexdigest(), digest.group(1))
         self.assertIn(".read(131073)", command)
-        self.assertIn("{'__name__':'__main__'}", command)
+        self.assertNotIn("_", command)
+        self.assertIn("n=chr(95)+chr(95)", command)
+        self.assertIn("{n+'name'+n:n+'main'+n}", command)
+
+    def test_readme_bootstrap_survives_discord_and_sets_main(self):
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        block = re.search(r"```python\n([^\n]+)\n```", readme)
+        self.assertIsNotNone(block)
+        command = block.group(1)
+        self.assertNotIn("_", command)
+
+        original_digest = re.search(
+            r"hexdigest\(\)==['\"]([0-9a-f]{64})['\"]", command
+        )
+        self.assertIsNotNone(original_digest)
+        payload = b"raise RuntimeError(__name__)\n"
+        test_command = command.replace(
+            original_digest.group(1), hashlib.sha256(payload).hexdigest()
+        )
+        with mock.patch(
+            "urllib.request.urlopen", return_value=io.BytesIO(payload)
+        ):
+            with self.assertRaisesRegex(RuntimeError, "^__main__$"):
+                exec(test_command, {})
+
+    def test_readme_bootstrap_rejects_changed_installer(self):
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        block = re.search(r"```python\n([^\n]+)\n```", readme)
+        self.assertIsNotNone(block)
+        with mock.patch(
+            "urllib.request.urlopen", return_value=io.BytesIO(b"changed")
+        ):
+            with self.assertRaisesRegex(
+                RuntimeError, "SPP installer security check failed"
+            ):
+                exec(block.group(1), {})
 
     def test_public_manifest_matches_every_release_archive_byte(self):
         manifest = json.loads(
