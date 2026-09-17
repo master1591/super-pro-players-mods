@@ -109,5 +109,43 @@ class ManagerInstallTests(unittest.TestCase):
             self.assertEqual(config.commits, 0)
 
 
+    def test_one_shot_app_timer_survives_without_python_reference(self):
+        manager = _load_manager(SOURCE)
+        scheduled = []
+        called = []
+
+        def apptimer(delay, call):
+            scheduled.append((delay, call))
+
+        manager._base = types.SimpleNamespace(apptimer=apptimer)
+        manager._app_timer(2.0, lambda: called.append("healthy"))
+        self.assertEqual(len(scheduled), 1)
+        self.assertEqual(scheduled[0][0], 2.0)
+        scheduled[0][1]()
+        self.assertEqual(called, ["healthy"])
+
+    def test_app_timer_fallback_is_retained_until_callback(self):
+        manager = _load_manager(SOURCE)
+        called = []
+
+        class Timer:
+            def __init__(self, delay, call):
+                self.delay = delay
+                self.call = call
+
+        def unavailable(*_args, **_kwargs):
+            raise AttributeError("one-shot helper unavailable")
+
+        manager._base = types.SimpleNamespace(
+            apptimer=unavailable,
+            AppTimer=Timer,
+        )
+        timer = manager._app_timer(2.0, lambda: called.append("healthy"))
+        self.assertIn(timer, manager._RETAINED_APP_TIMERS)
+        timer.call()
+        self.assertEqual(called, ["healthy"])
+        self.assertNotIn(timer, manager._RETAINED_APP_TIMERS)
+
+
 if __name__ == "__main__":
     unittest.main()
