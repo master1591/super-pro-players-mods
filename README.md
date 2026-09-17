@@ -5,9 +5,12 @@ A one-command installer and updater for official SUPER PRO PLAYERS BombSquad cli
 > **Beta:** The first official package release adds synchronized SUPER and PRO
 > victory music for supported BombSquad API 9 builds on Windows and Android.
 
-## Quick install (Windows and Android)
+## Quick install (supported BombSquad builds)
 
 You do **not** need to download this file manually or search for BombSquad's mods folder.
+The manager installer supports BombSquad plugin APIs 6–9 on desktop and mobile,
+including macOS. Individual packages can have narrower platform requirements;
+the current victory-music package supports Windows and Android only.
 
 1. Open BombSquad.
 2. Open **Settings → Advanced**.
@@ -16,8 +19,11 @@ You do **not** need to download this file manually or search for BombSquad's mod
 5. Paste the complete command below and press **Exec**:
 
 ```python
-import urllib.request as u,hashlib as h;d=u.urlopen('https://raw.githubusercontent.com/master1591/super-pro-players-mods/7cdab8770d9ef822a8d2ecc3f0e1d9634f854d00/install.py',timeout=20).read(131073);len(d)<=131072 or (_ for _ in ()).throw(RuntimeError('SPP installer is too large'));h.sha256(d).hexdigest()=='6372c6f5ad65099aa913fd810ce5a65658c21f3289988c6136f9f65a585e395c' or (_ for _ in ()).throw(RuntimeError('SPP installer security check failed'));exec(compile(d,'spp_installer','exec'),{'__name__':'__main__'})
+import urllib.request as u,hashlib as h;d=u.urlopen('https://raw.githubusercontent.com/master1591/super-pro-players-mods/7cdab8770d9ef822a8d2ecc3f0e1d9634f854d00/install.py',timeout=20).read(131073);len(d)<=131072 or (x for x in ()).throw(RuntimeError('SPP installer is too large'));h.sha256(d).hexdigest()=='6372c6f5ad65099aa913fd810ce5a65658c21f3289988c6136f9f65a585e395c' or (x for x in ()).throw(RuntimeError('SPP installer security check failed'));n=chr(95)+chr(95);exec(compile(d,'spp-installer','exec'),{n+'name'+n:n+'main'+n})
 ```
+
+The command intentionally contains no underscore characters, so Discord cannot
+remove parts of it as Markdown. Keep it inside a fenced code block when sharing.
 
 6. Wait for `Installed successfully. Fully restart BombSquad once.`
 7. Fully close BombSquad and open it again.
