@@ -2,16 +2,24 @@
 
 import ast
 import hashlib
+import importlib.util
 import io
 import json
 from pathlib import Path
 import re
+import tempfile
 import unittest
 from unittest import mock
 import zipfile
 
 
 ROOT = Path(__file__).resolve().parents[1]
+BUILDER_SPEC = importlib.util.spec_from_file_location(
+    "spp_release_builder_tests", ROOT / "tools/build_local_release.py"
+)
+assert BUILDER_SPEC is not None and BUILDER_SPEC.loader is not None
+BUILDER = importlib.util.module_from_spec(BUILDER_SPEC)
+BUILDER_SPEC.loader.exec_module(BUILDER)
 
 
 class ReleaseMetadataTests(unittest.TestCase):
@@ -80,10 +88,10 @@ class ReleaseMetadataTests(unittest.TestCase):
         )
         self.assertEqual(manifest["schema"], 1)
         self.assertEqual(manifest["channel"], "stable")
-        self.assertGreaterEqual(manifest["release_sequence"], 4)
+        self.assertGreaterEqual(manifest["release_sequence"], 5)
         self.assertEqual(
             [item["id"] for item in manifest["packages"]],
-            ["spp-client-core", "spp-victory-audio"],
+            ["spp-client-core", "spp-victory-audio", "spp-shock-norris"],
         )
 
         for package in manifest["packages"]:
@@ -109,9 +117,85 @@ class ReleaseMetadataTests(unittest.TestCase):
                     # Audio is distributed only in its verified ZIP, not as
                     # duplicate loose MP3s in Git. Code/catalog sources ARE
                     # tracked and must match the release byte for byte.
-                    if package["id"] == "spp-client-core" or member.filename == "catalog.json":
+                    if package["id"] != "spp-victory-audio" or member.filename == "catalog.json":
                         source = ROOT / "packages" / package["id"] / member.filename
                         self.assertEqual(data, source.read_bytes())
+
+    def test_shock_norris_is_an_independent_compatible_restart_package(self):
+        manifest = json.loads((ROOT / "manifest.json").read_text(encoding="utf-8"))
+        package = next(p for p in manifest["packages"] if p["id"] == "spp-shock-norris")
+        self.assertEqual(package["version"], BUILDER.SHOCK_VERSION)
+        self.assertEqual(package["api_versions"], [9])
+        self.assertEqual(package["minimum_build"], 22796)
+        self.assertEqual(package["entrypoint"], "spp_shock_norris.py")
+        self.assertEqual(package["start_callable"], "start")
+        self.assertEqual(package["load_order"], 5)
+        self.assertTrue(package["requires_restart"])
+        self.assertEqual(
+            {item["path"] for item in package["files"]},
+            {"spp_shock_norris.py", "README.md"},
+        )
+
+    def test_clean_checkout_rebuild_preserves_all_published_archive_bytes(self):
+        manifest = json.loads((ROOT / "manifest.json").read_text(encoding="utf-8"))
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            audio_source = root / "audio-source"
+            audio_source.mkdir()
+            (audio_source / "catalog.json").write_bytes(
+                (ROOT / "packages/spp-victory-audio/catalog.json").read_bytes()
+            )
+            with mock.patch.object(BUILDER, "AUDIO_SOURCE", audio_source):
+                built = BUILDER.build(root / "release", manifest["release_sequence"])
+            self.assertEqual(json.loads(built.read_text(encoding="utf-8")), manifest)
+            for package in manifest["packages"]:
+                name = package["download_url"].rsplit("/", 1)[-1]
+                self.assertEqual(
+                    (root / "release" / name).read_bytes(),
+                    (ROOT / "release" / name).read_bytes(),
+                )
+
+    def test_published_archive_cannot_be_overwritten_with_changed_source(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "source.py"
+            source.write_text("VALUE = 1\n", encoding="utf-8")
+            output = root / "package-1.zip"
+            BUILDER.build_archive(output, [("source.py", source)])
+            published = output.read_bytes()
+            # An identical rebuild is harmless; changed code needs a version bump.
+            BUILDER.build_archive(output, [("source.py", source)])
+            source.write_text("VALUE = 2\n", encoding="utf-8")
+            with self.assertRaisesRegex(FileExistsError, "bump the package version"):
+                BUILDER.build_archive(output, [("source.py", source)])
+            self.assertEqual(output.read_bytes(), published)
+
+    def test_audio_reuse_rejects_corruption_and_changed_catalog(self):
+        manifest_bytes = (ROOT / "manifest.json").read_bytes()
+        manifest = json.loads(manifest_bytes)
+        record = next(p for p in manifest["packages"] if p["id"] == "spp-victory-audio")
+        name = record["download_url"].rsplit("/", 1)[-1]
+        reviewed = (ROOT / "release" / name).read_bytes()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "manifest.json").write_bytes(manifest_bytes)
+            (root / "release").mkdir()
+            archive = root / "release" / name
+            archive.write_bytes(reviewed[:-1] + bytes([reviewed[-1] ^ 1]))
+            source = root / "audio-source"
+            source.mkdir()
+            catalog = source / "catalog.json"
+            catalog.write_bytes((ROOT / "packages/spp-victory-audio/catalog.json").read_bytes())
+            with mock.patch.object(BUILDER, "ROOT", root), mock.patch.object(
+                BUILDER, "AUDIO_SOURCE", source
+            ):
+                with self.assertRaisesRegex(ValueError, "SHA-256/size"):
+                    BUILDER.reuse_audio_archive(root / "output", name)
+                archive.write_bytes(reviewed)
+                catalog.write_text("{}\n", encoding="utf-8")
+                with self.assertRaisesRegex(ValueError, "catalog changed"):
+                    BUILDER.reuse_audio_archive(root / "output", name)
+                self.assertFalse((root / "output" / name).exists())
 
     def test_core_release_version_matches_runtime_and_builder(self):
         manifest = json.loads((ROOT / "manifest.json").read_text(encoding="utf-8"))
