@@ -95,9 +95,16 @@ Unchanged music packages are retained without downloading them again.
 Older manager versions with the repeated-update rollback bug need the current
 installer command once; package updates cannot replace the manager bootstrap.
 
-Select **Shock Norris** in **Settings → Player Profiles → your profile →
-Character**, then join the updated SPP server. Anyone on that server can also
-type **/shock** to enable him, or **/shock off** to return to their normal look.
+On the updated SPP server, use the **normal join character chooser**: press the
+**bomb button** to cycle characters until **[Shock Norris]** appears beside your
+player name, then press **jump/punch/pickup** to join. Up/down changes player
+profiles; the bomb button changes characters. This choice is free for everyone,
+including players without the manager or character package.
+
+The installed package also adds **Shock Norris** to **Settings → Player
+Profiles → your profile → Character**. The optional **/shock** and **/shock off**
+chat shortcuts remain available. Choosing normally in the join screen clears
+your earlier chat selection, so it cannot override the character you pick.
 Commands apply on the **next spawn or round**, without killing or respawning
 the player. Disabling a profile that is itself Shock Norris selects Spaz next
 spawn; other profiles keep their normal character.
@@ -111,12 +118,14 @@ approximates the concept artwork; it is not a transparent body made entirely
 of animated lightning. He uses normal native skeleton physics and gains no
 extra health, speed, or punch power. Team membership stays unchanged.
 
-The matching server update must be activated before `/shock` and its effects
-are available online. The client pack alone adds a profile appearance and
-native electrical character sounds for local games. No custom assets are
-copied into game installation folders and no new music playback engine is used.
+The matching server update must be activated before the free join selection,
+`/shock`, and its effects are available online. The client pack alone adds a
+profile appearance and native electrical character sounds for local games.
+No custom assets are copied into game installation folders and no new music
+playback engine is used.
 Legacy API 6–8 clients cannot install the profile package; on a compatible SPP
-connection they can still use `/shock` and see the server's stock-asset effects.
+connection they can still choose him in the server join screen and see the
+server's stock-asset effects.
 
 ## Victory-music package
 
@@ -168,7 +177,7 @@ actual speaker output must still be checked on both devices after updating.
    **SPP music connected**. If it never appears, reconnect once and send staff
    the developer-console lines beginning `[SPP Client]`.
 3. The server owner should confirm a successful Witchly upload before restarting,
-   then look for `SUPER PRO READY version=2026.09.17.1`. Registration and round
+   then look for `SUPER PRO READY version=2026.09.18.2`. Registration and round
    event diagnostics begin `SUPER PRO MUSIC`.
 4. If connected but silent, report which device, team and round (1/3, 2/3, 3/3)
    failed, plus any playback warning. Do not reinstall unrelated mods or delete
