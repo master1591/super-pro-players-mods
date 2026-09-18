@@ -1,11 +1,14 @@
 """Tests for loader installation and legacy Locale config recovery."""
 
 import importlib.util
+import copy
+import json
 from pathlib import Path
 import sys
 import tempfile
 import types
 import unittest
+from unittest import mock
 
 
 SOURCE = Path(__file__).resolve().parents[1] / "super_pro_players_mod_manager.py"
@@ -205,6 +208,84 @@ class ManagerInstallTests(unittest.TestCase):
             service._mark_pending_healthy()
             self.assertIsNone(service.state["pending"])
             self.assertIsNone(manager._load_state()["pending"])
+
+    def test_existing_manager_adds_shock_once_and_preserves_music_and_rollback(self):
+        manager = _load_manager(SOURCE)
+        repository = SOURCE.parent
+        manifest = manager._validate_manifest(
+            json.loads((repository / "manifest.json").read_text(encoding="utf-8")),
+            manager.DEFAULT_MANIFEST_URL,
+            api_version=9,
+            build_number=22796,
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            manager._CACHED_PATHS = {
+                "root": str(root), "state": str(root / "state.json"),
+                "cache": str(root / "manifest-cache.json"),
+                "staging": str(root / "staging"),
+                "releases": str(root / "releases"),
+                "logs": str(root / "manager.log"),
+            }
+            manager._game_api_version = lambda: 9
+            manager._game_build_number = lambda: 22796
+            manager._append_log = lambda _message: None
+
+            def local_download(package, _source_url, target, _progress):
+                name = package["download_url"].rsplit("/", 1)[-1]
+                Path(target).write_bytes((repository / "release" / name).read_bytes())
+
+            with mock.patch.object(manager, "_download_archive", local_download):
+                service = manager._ManagerService()
+                service.state = manager._default_state()
+                service.manifest = copy.deepcopy(manifest)
+                service.manifest["packages"] = [
+                    package for package in manifest["packages"]
+                    if package["id"] != "spp-shock-norris"
+                ]
+                source_url = service.state["source_url"]
+                initial = service._prepare_transaction(
+                    service._packages_needing_update(), source_url, None
+                )
+                service._activate_transaction(initial)
+                service._process_pending_boot()
+                service._mark_pending_healthy()
+                previous = copy.deepcopy(service.state["active"])
+
+                service.manifest = manifest
+                updates = service._packages_needing_update()
+                self.assertEqual([p["id"] for p in updates], ["spp-shock-norris"])
+                transaction = service._prepare_transaction(updates, source_url, None)
+                service._activate_transaction(transaction)
+                self.assertEqual(service.state["pending"]["fallback_active"], previous)
+                for package_id, record in previous.items():
+                    self.assertEqual(service.state["active"][package_id], record)
+                service._process_pending_boot()
+                service._mark_pending_healthy()
+
+                reloaded = manager._ManagerService()
+                reloaded.state = manager._load_state()
+                reloaded.manifest = manifest
+                self.assertIsNone(reloaded.state["pending"])
+                self.assertEqual(reloaded.state["rollback_active"], previous)
+                self.assertEqual(reloaded._packages_needing_update(), [])
+                self.assertTrue(manager._verify_installed_map(reloaded.state["active"])[0])
+
+    def test_legacy_game_does_not_download_api9_character(self):
+        manager = _load_manager(SOURCE)
+        raw = json.loads((SOURCE.parent / "manifest.json").read_text(encoding="utf-8"))
+        for api in (6, 7, 8):
+            with self.subTest(api=api):
+                manifest = manager._validate_manifest(
+                    raw, manager.DEFAULT_MANIFEST_URL,
+                    api_version=api, build_number=22837,
+                )
+                shock = next(p for p in manifest["packages"] if p["id"] == "spp-shock-norris")
+                self.assertFalse(shock["compatible"])
+                service = manager._ManagerService()
+                service.state = manager._default_state()
+                service.manifest = manifest
+                self.assertEqual(service._packages_needing_update(), [])
 
 
 if __name__ == "__main__":

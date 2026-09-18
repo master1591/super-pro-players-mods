@@ -5,6 +5,10 @@ A one-command installer and updater for official SUPER PRO PLAYERS BombSquad cli
 > **Beta:** The first official package release adds synchronized SUPER and PRO
 > victory music for supported BombSquad API 9 builds on Windows and Android.
 
+The **Shock Norris** character package adds a free electrical-themed skeleton
+for API 9 builds 22796 and newer. It uses native game assets and sound effects,
+so it does not depend on the Windows/Android music backend.
+
 ## Quick install (supported BombSquad builds)
 
 You do **not** need to download this file manually or search for BombSquad's mods folder.
@@ -79,6 +83,40 @@ Versions older than 1.5.23 are unsupported because they predate the normal plugi
 - No BombSquad, Discord, or GitHub passwords or tokens are collected or stored.
 
 SHA-256 protects against corruption or unexpected changes. It is not a publisher signature if the official repository itself is compromised.
+
+## Free Shock Norris character
+
+Users of manager **0.1.2-beta** can get the character through their installed manager: let the
+automatic check finish (or press **CHECK**), press **INSTALL / UPDATE ALL**,
+confirm when asked, then fully close and reopen BombSquad once. There is no
+new console command or manual download. Existing managers keep their second-click
+confirmation for executable package updates; this is not a game-version upgrade.
+Unchanged music packages are retained without downloading them again.
+Older manager versions with the repeated-update rollback bug need the current
+installer command once; package updates cannot replace the manager bootstrap.
+
+Select **Shock Norris** in **Settings → Player Profiles → your profile →
+Character**, then join the updated SPP server. Anyone on that server can also
+type **/shock** to enable him, or **/shock off** to return to their normal look.
+Commands apply on the **next spawn or round**, without killing or respawning
+the player. Disabling a profile that is itself Shock Norris selects Spaz next
+spawn; other profiles keep their normal character.
+There is no ticket price, rank, subscription, or Bones purchase requirement.
+The original Bones character and its purchase status are not changed.
+
+The server renders a red skeleton, small pulsing electrical flashes and glow,
+with electrical charge/hit/discharge sounds from the game. These effects are
+visible and audible to players without the package too. This first version
+approximates the concept artwork; it is not a transparent body made entirely
+of animated lightning. He uses normal native skeleton physics and gains no
+extra health, speed, or punch power. Team membership stays unchanged.
+
+The matching server update must be activated before `/shock` and its effects
+are available online. The client pack alone adds a profile appearance and
+native electrical character sounds for local games. No custom assets are
+copied into game installation folders and no new music playback engine is used.
+Legacy API 6–8 clients cannot install the profile package; on a compatible SPP
+connection they can still use `/shock` and see the server's stock-asset effects.
 
 ## Victory-music package
 

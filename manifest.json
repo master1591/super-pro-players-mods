@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "release_sequence": 4,
+  "release_sequence": 5,
   "channel": "stable",
   "title": "SUPER PRO PLAYERS official packages",
   "packages": [
@@ -98,6 +98,36 @@
       "start_callable": null,
       "requires_restart": true,
       "load_order": 20
+    },
+    {
+      "id": "spp-shock-norris",
+      "name": "Shock Norris",
+      "version": "0.1.0-beta",
+      "api_versions": [
+        9
+      ],
+      "minimum_build": 22796,
+      "maximum_build": null,
+      "download_url": "https://raw.githubusercontent.com/master1591/super-pro-players-mods/main/release/spp-shock-norris-0.1.0-beta.zip",
+      "download_size": 2927,
+      "unpacked_size": 5826,
+      "archive_sha256": "146c4d8fe8e3b7e9b22d84bfbd5b52e838535250c788f745a191a5779941f72c",
+      "files": [
+        {
+          "path": "README.md",
+          "size": 2618,
+          "sha256": "aa8b383e716d083b6b7d53a5f956900ec88c6eb21762067bf0f91f9468733098"
+        },
+        {
+          "path": "spp_shock_norris.py",
+          "size": 3208,
+          "sha256": "178dc5177f6a87f27bf57efe9fd77b3039403c3c5218adf23f865deb7e14e122"
+        }
+      ],
+      "entrypoint": "spp_shock_norris.py",
+      "start_callable": "start",
+      "requires_restart": true,
+      "load_order": 5
     }
   ]
 }
